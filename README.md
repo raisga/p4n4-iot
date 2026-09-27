@@ -124,7 +124,8 @@ p4n4-iot/
 │   │   └── acl.example                # Topic ACL template
 │   ├── node-red/
 │   │   ├── settings.js                # Node-RED runtime settings
-│   │   └── flows.json                 # MQTT-to-InfluxDB pipeline flows
+│   │   └── flows/
+│   │       └── flows.json             # MQTT-to-InfluxDB pipeline flows
 │   └── grafana/
 │       └── provisioning/
 │           ├── datasources/
@@ -208,7 +209,7 @@ make clean          # Stop services and remove all data volumes
 ### Testing the Data Pipeline
 
 1. Start the stack: `make up`
-2. Open Node-RED at <http://localhost:1880> — the sample flow auto-loads from `flows.json`
+2. Open Node-RED at <http://localhost:1880> — the sample flow auto-loads from `config/node-red/flows/flows.json`. Deploying from the editor saves back to that file. On Linux, the `config/node-red/flows/` directory must be writable by the container's user (uid 1000), or deploys fail with `EACCES`.
 3. Publish test data:
 
    ```bash

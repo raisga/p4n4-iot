@@ -20,6 +20,8 @@ config/mosquitto/certs/
 
 # Node-RED
 config/node-red/flows_cred.json
+config/node-red/flows/flows_cred.json
+config/node-red/flows/.*.backup
 config/node-red/*.backup
 config/node-red/.config*
 config/node-red/lib/

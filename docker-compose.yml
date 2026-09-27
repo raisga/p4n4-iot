@@ -77,10 +77,13 @@ services:
       INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
       INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
       INFLUXDB_SANDBOX_BUCKET: ${INFLUXDB_SANDBOX_BUCKET:-sandbox}
+      FLOWS: /data/flows/flows.json
     volumes:
       - node-red-data:/data
       - ./config/node-red/settings.js:/data/settings.js:ro
-      - ./config/node-red/flows.json:/data/flows.json
+      # Mount the directory, not the file: Node-RED saves by renaming a temp file
+      # over flows.json, which fails with EBUSY on a single-file bind mount.
+      - ./config/node-red/flows:/data/flows
     depends_on:
       mqtt:
         condition: service_healthy

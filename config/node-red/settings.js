@@ -5,7 +5,8 @@
 
 module.exports = {
     // Flow file configuration
-    flowFile: 'flows.json',
+    // Path relative to userDir. The FLOWS env var in docker-compose.yml overrides it.
+    flowFile: 'flows/flows.json',
     flowFilePretty: true,
 
     // User directory for storing flows and credentials
