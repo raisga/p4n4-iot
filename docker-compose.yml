@@ -76,6 +76,7 @@ services:
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
       INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
       INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
+      INFLUXDB_SANDBOX_BUCKET: ${INFLUXDB_SANDBOX_BUCKET:-sandbox}
     volumes:
       - node-red-data:/data
       - ./config/node-red/settings.js:/data/settings.js:ro
