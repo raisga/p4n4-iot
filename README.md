@@ -160,27 +160,21 @@ The stack provisions five buckets automatically on first run:
 
 ## MQTT Topic Convention
 
-The recommended topic structure is:
+Devices publish telemetry to:
 
 ```
-{site}/{device_type}/{device_id}/{measurement}
+sensors/{device_id}/{measurement}
 ```
 
-Examples:
+The payload is a JSON object, for example `{"value": 23.5, "unit": "C"}`. Node-RED writes each reading to the `sensor_data` measurement, tagged with `device` and `sensor` from the topic. Numbers, strings and booleans in the payload become fields; `device` and `model` keys in the payload are ignored, because the topic names the device.
 
-```
-factory/temp_sensor/T001/celsius
-factory/humidity_sensor/H001/percent
-lab/pressure_sensor/P007/bar
-```
+| Topic | Destination |
+|-------|-------------|
+| `sensors/{device_id}/{measurement}` | `raw_telemetry` bucket, `sensor_data` measurement |
+| `inference/{device_id}/result` | `raw_telemetry` bucket, `inference` measurement |
+| `sandbox/sensors/{device_id}/{measurement}`, `sandbox/inference/{device_id}/result` | `sandbox` bucket |
 
-The bundled Node-RED flows also support flat topic namespaces for quick testing:
-
-```
-sensors/temperature    →  raw_telemetry bucket
-inference/results      →  raw_telemetry bucket
-sandbox/sensors/#      →  sandbox bucket
-```
+Inference results from p4n4-edge are tagged with `device` from the topic, and `model` from the payload when present. Messages on `sensors/` or `inference/` topics with a different shape, such as `sensors/temperature` or `inference/results`, are dropped with a warning in the Node-RED debug sidebar.
 
 ---
 
@@ -223,13 +217,8 @@ make clean          # Stop services and remove all data volumes
 Use any MQTT client to publish JSON payloads:
 
 ```bash
-# Flat namespace (quick testing)
-mosquitto_pub -h localhost -t 'sensors/temperature' \
-  -m '{"value": 23.5, "unit": "C", "device": "my-sensor"}'
-
-# Structured namespace (recommended for production)
-mosquitto_pub -h localhost -t 'factory/temp_sensor/T001/celsius' \
-  -m '{"value": 23.5, "unit": "C", "device": "T001"}'
+mosquitto_pub -h localhost -t 'sensors/my-sensor/temperature' \
+  -m '{"value": 23.5, "unit": "C"}'
 ```
 
 Node-RED routes the message to InfluxDB, where it becomes immediately queryable in Grafana.
@@ -255,6 +244,7 @@ All credentials can be customized in `.env`. Defaults (from `.env.example`):
 |----------|----------|-----------------|
 | InfluxDB | `admin`  | `adminpassword` |
 | Grafana  | `admin`  | `adminpassword` |
+| Node-RED | `admin`  | `adminpassword` |
 
 **Note:** Change all passwords and the InfluxDB token before deploying to production.
 

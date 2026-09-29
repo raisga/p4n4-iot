@@ -191,25 +191,24 @@ buckets:
 test-mqtt:
 	@echo "Publishing test sensor data to MQTT..."
 	docker run --rm --network p4n4-net eclipse-mosquitto:2 \
-		mosquitto_pub -h mqtt -t 'sensors/temperature' \
-		-m '{"value": 23.5, "unit": "C", "device": "test-sensor"}'
+		mosquitto_pub -h mqtt -t 'sensors/test-sensor/temperature' \
+		-m '{"value": 23.5, "unit": "C"}'
 	@echo "Publishing test inference result..."
 	docker run --rm --network p4n4-net eclipse-mosquitto:2 \
-		mosquitto_pub -h mqtt -t 'inference/results' \
+		mosquitto_pub -h mqtt -t 'inference/test-sensor/result' \
 		-m '{"model": "test", "label": "idle", "confidence": 0.95, "latency": 25.3}'
 	@echo "Done! Check Node-RED debug panel."
 
 test-sandbox:
 	@printf "$(CYAN)  Publishing test data to sandbox bucket...$(NC)\n"
 	@docker run --rm --network p4n4-net eclipse-mosquitto:2 \
-		mosquitto_pub -h mqtt -t 'sandbox/sensors/temperature' \
-		-m '{"value": 22.1, "unit": "C", "device": "sandbox-sensor-1", "sandbox": true}'
+		mosquitto_pub -h mqtt -t 'sandbox/sensors/sandbox-sensor-1/temperature' \
+		-m '{"value": 22.1, "unit": "C", "sandbox": true}'
 	@docker run --rm --network p4n4-net eclipse-mosquitto:2 \
-		mosquitto_pub -h mqtt -t 'sandbox/sensors/humidity' \
-		-m '{"value": 65.3, "unit": "%", "device": "sandbox-sensor-1", "sandbox": true}'
+		mosquitto_pub -h mqtt -t 'sandbox/sensors/sandbox-sensor-1/humidity' \
+		-m '{"value": 65.3, "unit": "%", "sandbox": true}'
 	@docker run --rm --network p4n4-net eclipse-mosquitto:2 \
-		mosquitto_pub -h mqtt -t 'sandbox/inference/results' \
+		mosquitto_pub -h mqtt -t 'sandbox/inference/sandbox-sensor-1/result' \
 		-m '{"model": "sandbox-test", "label": "anomaly", "confidence": 0.87, "latency": 18.5, "sandbox": true}'
 	@printf "$(GREEN)  Sandbox test data published!$(NC)\n"
-	@printf "$(DIM)  Configure Node-RED to route 'sandbox/#' topics to the sandbox bucket.$(NC)\n"
 	@printf "$(DIM)  View in Grafana using the 'InfluxDB-Sandbox' datasource.$(NC)\n"

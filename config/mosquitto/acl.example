@@ -33,7 +33,7 @@ topic readwrite +/+/+/#
 # ------------------------------------------------------------------------------
 # Generic device pattern (replace with per-device accounts in production)
 user iot-device-001
-topic write sensors/+/+/+
+topic write sensors/iot-device-001/+
 topic write +/+/iot-device-001/#
 topic read commands/iot-device-001/#
 

@@ -78,6 +78,9 @@ services:
       INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
       INFLUXDB_SANDBOX_BUCKET: ${INFLUXDB_SANDBOX_BUCKET:-sandbox}
       FLOWS: /data/flows/flows.json
+      # Editor login (no default password: logins are refused until it is set)
+      NODE_RED_USER: ${NODE_RED_USER:-admin}
+      NODE_RED_PASSWORD: ${NODE_RED_PASSWORD:-}
     volumes:
       - node-red-data:/data
       - ./config/node-red/settings.js:/data/settings.js:ro
