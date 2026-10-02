@@ -16,7 +16,8 @@ data/
 # Mosquitto auth files (generated, contain hashed passwords)
 config/mosquitto/passwd
 config/mosquitto/acl
-config/mosquitto/certs/
+config/mosquitto/certs/*
+!config/mosquitto/certs/.gitkeep
 
 # Node-RED
 config/node-red/flows_cred.json

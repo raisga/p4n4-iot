@@ -14,8 +14,27 @@ services:
     ports:
       - "1883:1883"   # MQTT TCP
       - "9001:9001"   # MQTT WebSocket
+    # bridge.sh writes the external-broker bridge config from MQTT_REMOTE_*
+    # (a no-op when MQTT_REMOTE_HOST is empty), then runs the image entrypoint
+    entrypoint: ["/bin/sh", "/p4n4/bridge.sh"]
+    command: ["/usr/sbin/mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
+    environment:
+      MQTT_REMOTE_HOST: ${MQTT_REMOTE_HOST:-}
+      MQTT_REMOTE_PORT: ${MQTT_REMOTE_PORT:-}
+      MQTT_REMOTE_USER: ${MQTT_REMOTE_USER:-}
+      MQTT_REMOTE_PASSWORD: ${MQTT_REMOTE_PASSWORD:-}
+      MQTT_REMOTE_TOPICS: ${MQTT_REMOTE_TOPICS:-sensors/#}
+      MQTT_REMOTE_PREFIX: ${MQTT_REMOTE_PREFIX:-}
+      MQTT_REMOTE_QOS: ${MQTT_REMOTE_QOS:-0}
+      MQTT_REMOTE_CLIENT_ID: ${MQTT_REMOTE_CLIENT_ID:-}
+      MQTT_REMOTE_TLS: ${MQTT_REMOTE_TLS:-false}
+      MQTT_REMOTE_CA_FILE: ${MQTT_REMOTE_CA_FILE:-}
+      MQTT_REMOTE_CERT_FILE: ${MQTT_REMOTE_CERT_FILE:-}
+      MQTT_REMOTE_KEY_FILE: ${MQTT_REMOTE_KEY_FILE:-}
     volumes:
       - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/mosquitto/bridge.sh:/p4n4/bridge.sh:ro
+      - ./config/mosquitto/certs:/mosquitto/certs:ro
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
     healthcheck:
@@ -114,6 +133,12 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-adminpassword}
       GF_INSTALL_PLUGINS: grafana-clock-panel,marcusolsson-json-datasource
+      # Lets p4n4-dashboard's web UI show Grafana in an <iframe>
+      GF_SECURITY_ALLOW_EMBEDDING: ${GRAFANA_ALLOW_EMBEDDING:-false}
+      # Path Grafana serves under: "/" (default), or "/grafana/" when
+      # p4n4-dashboard proxies it on its own origin (its GRAFANA_UPSTREAM)
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s${GRAFANA_SUB_PATH:-/}"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       # Passed to provisioning templates via env var expansion
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
       INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}

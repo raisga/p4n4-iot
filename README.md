@@ -17,6 +17,7 @@ Part of the [p4n4](https://github.com/raisga/p4n4) platform — an EdgeAI + GenA
 - [Project Structure](#project-structure)
 - [InfluxDB Buckets](#influxdb-buckets)
 - [MQTT Topic Convention](#mqtt-topic-convention)
+- [External MQTT Broker](#external-mqtt-broker)
 - [Usage](#usage)
 - [Default Ports](#default-ports)
 - [Default Credentials](#default-credentials)
@@ -178,6 +179,54 @@ Inference results from p4n4-edge are tagged with `device` from the topic, and `m
 
 ---
 
+## External MQTT Broker
+
+The local broker can pull topics from another MQTT broker, the way
+`mosquitto_sub -h <host> -u <user> -P <password> -t <topic>` would, and republish them
+locally. Node-RED and the edge runner then see those messages as if devices had published
+them here. The bridge is inbound only: nothing is published to the external broker.
+
+Set the `MQTT_REMOTE_*` variables in `.env` and restart the `mqtt` service:
+
+```bash
+MQTT_REMOTE_HOST=broker.example.com
+MQTT_REMOTE_USER=plant-a
+MQTT_REMOTE_PASSWORD='s3cr$t'        # single quotes: Compose reads $ and # literally
+MQTT_REMOTE_TOPICS=sensors/#,factory/+/+/celsius
+MQTT_REMOTE_TLS=true                 # port defaults to 8883 with TLS, 1883 without
+```
+
+```bash
+docker compose up -d mqtt
+make bridge-status                   # connected / not connected
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MQTT_REMOTE_HOST` | *(empty: disabled)* | External broker hostname or IP |
+| `MQTT_REMOTE_PORT` | `8883` with TLS, else `1883` | External broker port |
+| `MQTT_REMOTE_USER` / `MQTT_REMOTE_PASSWORD` | *(empty)* | Login on the external broker |
+| `MQTT_REMOTE_TOPICS` | `sensors/#` | Comma-separated topic filters to pull in |
+| `MQTT_REMOTE_PREFIX` | *(empty)* | Prepended locally, e.g. `remote/` turns `sensors/a/t` into `remote/sensors/a/t` |
+| `MQTT_REMOTE_QOS` | `0` | Subscription QoS |
+| `MQTT_REMOTE_CLIENT_ID` | `p4n4-bridge-<container id>` | Client ID on the external broker |
+| `MQTT_REMOTE_TLS` | `false` | Connect over TLS |
+| `MQTT_REMOTE_CA_FILE` | system CA bundle | CA certificate in `config/mosquitto/certs/` (for a private CA) |
+| `MQTT_REMOTE_CERT_FILE` / `MQTT_REMOTE_KEY_FILE` | *(empty)* | Client certificate and key in `config/mosquitto/certs/`, for mutual TLS |
+
+At container start, `config/mosquitto/bridge.sh` turns these variables into a Mosquitto
+bridge config. Mosquitto can't read environment variables itself, and this way the
+password stays in `.env` only. The broker logs the bridge target on start (`docker logs
+p4n4-mqtt`), and publishes the connection state (`1`/`0`) locally on
+`$SYS/broker/connection/p4n4-remote/state`. A bad login shows up there as `0` and in the
+log as `Connection Refused: not authorised`; the bridge keeps retrying with backoff.
+
+Keep `MQTT_REMOTE_PREFIX` empty to feed bridged `sensors/{device_id}/{measurement}`
+messages straight into the pipeline above. Set a prefix to keep them apart from local
+devices; Node-RED's flows then need a matching subscription.
+
+---
+
 ## Usage
 
 ### Using Make Commands
@@ -197,6 +246,7 @@ make stop SERVICE=mqtt        # Stop a single service (warns about deps)
 
 make test-mqtt      # Publish test messages to MQTT
 make test-sandbox   # Publish test data to sandbox bucket
+make bridge-status  # External broker bridge: connected or not
 make clean          # Stop services and remove all data volumes
 ```
 
@@ -244,6 +294,8 @@ All credentials can be customized in `.env`. Defaults (from `.env.example`):
 |----------|----------|-----------------|
 | InfluxDB | `admin`  | `adminpassword` |
 | Grafana  | `admin`  | `adminpassword` |
+
+To show Grafana inside the [p4n4-dashboard](https://github.com/raisga/p4n4-dashboard) web UI, set `GRAFANA_ALLOW_EMBEDDING=true` in `.env` (`p4n4 init` does this when the dashboard layer is enabled). To serve Grafana through the dashboard's own origin (for HTTPS), also set `GRAFANA_SUB_PATH=/grafana/` and the dashboard's `GRAFANA_UPSTREAM=http://p4n4-grafana:3000`. For read-only viewing without a login, see the anonymous-viewer example in `docker-compose.override.yml.example`.
 | Node-RED | `admin`  | `adminpassword` |
 
 **Note:** Change all passwords and the InfluxDB token before deploying to production.

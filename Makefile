@@ -3,7 +3,7 @@
 # ==============================================================================
 
 .PHONY: help up down restart logs ps clean pull status interactive start stop \
-        test-mqtt test-sandbox buckets
+        test-mqtt test-sandbox buckets bridge-status
 
 # Colors
 GREEN  := \033[0;32m
@@ -40,6 +40,9 @@ help:
 	@echo ""
 	@printf "  $(BOLD)InfluxDB:$(NC)\n"
 	@printf "    $(GREEN)make buckets$(NC)         List all InfluxDB buckets\n"
+	@echo ""
+	@printf "  $(BOLD)MQTT:$(NC)\n"
+	@printf "    $(GREEN)make bridge-status$(NC)   External broker bridge state\n"
 	@echo ""
 	@printf "  $(BOLD)Testing:$(NC)\n"
 	@printf "    $(GREEN)make test-mqtt$(NC)       Publish test data to MQTT\n"
@@ -183,6 +186,26 @@ buckets:
 		--token "$$(docker exec p4n4-influxdb sh -c 'echo $$DOCKER_INFLUXDB_INIT_ADMIN_TOKEN')" \
 		--org "$$(docker exec p4n4-influxdb sh -c 'echo $$DOCKER_INFLUXDB_INIT_ORG')" 2>/dev/null \
 		|| printf "$(RED)  InfluxDB is not running. Start with: make up$(NC)\n"
+
+# ------------------------------------------------------------------------------
+# External Broker Bridge
+# ------------------------------------------------------------------------------
+
+# Mosquitto publishes the bridge state (1 = connected) as a retained message
+bridge-status:
+	@host=$$(docker exec p4n4-mqtt sh -c 'echo $$MQTT_REMOTE_HOST' 2>/dev/null) \
+		|| { printf "$(RED)  MQTT broker is not running. Start with: make up$(NC)\n"; exit 1; }; \
+	if [ -z "$$host" ]; then \
+		printf "$(DIM)  Bridge disabled (MQTT_REMOTE_HOST is empty in .env)$(NC)\n"; exit 0; \
+	fi; \
+	state=$$(docker exec p4n4-mqtt mosquitto_sub -h localhost \
+		-t '$$SYS/broker/connection/p4n4-remote/state' -C 1 -W 3 2>/dev/null); \
+	if [ "$$state" = "1" ]; then \
+		printf "  Bridge to $(BOLD)%s$(NC): $(GREEN)connected$(NC)\n" "$$host"; \
+	else \
+		printf "  Bridge to $(BOLD)%s$(NC): $(RED)not connected$(NC)\n" "$$host"; \
+		printf "$(DIM)  See: docker logs p4n4-mqtt$(NC)\n"; exit 1; \
+	fi
 
 # ------------------------------------------------------------------------------
 # Testing Commands
