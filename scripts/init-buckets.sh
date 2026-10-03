@@ -9,7 +9,7 @@
 #   raw_telemetry    - all inbound sensor readings           (30d retention)
 #   processed_metrics - downsampled / aggregated data        (365d retention)
 #   ai_events        - AI annotations, anomaly flags         (infinite)
-#   system_health    - Node-RED and stack component metrics  (7d retention)
+#   system_health    - stack component metrics (Telegraf)    (7d retention)
 #   sandbox          - development / testing                 (configurable)
 #
 # Note: raw_telemetry is the DOCKER_INFLUXDB_INIT_BUCKET and is created
@@ -20,8 +20,9 @@ set -e
 
 ORG="${DOCKER_INFLUXDB_INIT_ORG:-ming}"
 TOKEN="${DOCKER_INFLUXDB_INIT_ADMIN_TOKEN:-p4n4-stack-token}"
-HOST="http://localhost:8086"
-MAX_ATTEMPTS=30
+# During first-run setup, the entrypoint runs a temporary influxd and
+# exports INFLUX_HOST for it. Nothing listens on 8086 yet.
+HOST="${INFLUX_HOST:-http://localhost:8086}"
 
 SANDBOX_BUCKET="${INFLUXDB_SANDBOX_BUCKET:-sandbox}"
 SANDBOX_RETENTION="${INFLUXDB_SANDBOX_RETENTION:-30d}"
@@ -29,25 +30,7 @@ BUCKET_PROCESSED="${INFLUXDB_BUCKET_PROCESSED:-processed_metrics}"
 BUCKET_AI_EVENTS="${INFLUXDB_BUCKET_AI_EVENTS:-ai_events}"
 BUCKET_HEALTH="${INFLUXDB_BUCKET_HEALTH:-system_health}"
 
-# ------------------------------------------------------------------------------
-# Wait for InfluxDB API
-# ------------------------------------------------------------------------------
-echo "[init-buckets] Waiting for InfluxDB API..."
-attempt=0
-while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
-    if influx ping --host "$HOST" 2>/dev/null; then
-        echo "[init-buckets] InfluxDB API ready."
-        break
-    fi
-    echo "[init-buckets]   Attempt $((attempt + 1))/$MAX_ATTEMPTS..."
-    sleep 2
-    attempt=$((attempt + 1))
-done
-
-if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
-    echo "[init-buckets] ERROR: InfluxDB API not ready after $((MAX_ATTEMPTS * 2))s. Buckets NOT created."
-    exit 1
-fi
+# No wait loop: the entrypoint waits for the server before running this script.
 
 # ------------------------------------------------------------------------------
 # Helper: create bucket if it does not already exist
@@ -57,7 +40,7 @@ create_bucket() {
     local retention="$2"   # e.g. "30d", "365d", "7d", or "0" for infinite
 
     if influx bucket list --host "$HOST" --token "$TOKEN" --org "$ORG" 2>/dev/null \
-        | grep -q "^$name\b"; then
+        | awk '{print $2}' | grep -qx "$name"; then
         echo "[init-buckets] Bucket '$name' already exists — skipping."
         return 0
     fi

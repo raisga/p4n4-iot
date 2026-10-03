@@ -14,6 +14,7 @@ Part of the [p4n4](https://github.com/raisga/p4n4) platform — an EdgeAI + GenA
 - [Stack Components](#stack-components)
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
+- [Choosing Services](#choosing-services)
 - [Project Structure](#project-structure)
 - [InfluxDB Buckets](#influxdb-buckets)
 - [MQTT Topic Convention](#mqtt-topic-convention)
@@ -60,6 +61,7 @@ This stack is designed to run standalone or alongside [`p4n4-ai`](https://github
 | **[InfluxDB](https://www.influxdata.com/)** | Time-Series Database | Purpose-built for high-write, time-stamped workloads. Stores every sensor reading with nanosecond precision so you can query, downsample, and retain data efficiently. |
 | **[Node-RED](https://nodered.org/)** | Workflow Engine | Low-code, flow-based programming tool for wiring together MQTT topics, HTTP APIs, databases, and custom logic. Build IoT processing pipelines without boilerplate. |
 | **[Grafana](https://grafana.com/)** | Data Visualization | Dashboarding platform that connects directly to InfluxDB to render real-time charts, gauges, and alerts. Provides at-a-glance operational visibility into device health. |
+| **[Telegraf](https://www.influxdata.com/time-series-platform/telegraf/)** *(optional)* | Metrics Agent | Collects host metrics (CPU, memory, disk, load) and Mosquitto broker stats into the `system_health` bucket. Off by default. |
 
 ---
 
@@ -109,6 +111,27 @@ This stack is designed to run standalone or alongside [`p4n4-ai`](https://github
 
 ---
 
+## Choosing Services
+
+Every service is optional. Each one sits in a [Compose profile](https://docs.docker.com/compose/how-tos/profiles/) of its own name, and `COMPOSE_PROFILES` in `.env` lists the ones that start:
+
+```bash
+# Default: the MING stack
+COMPOSE_PROFILES=mqtt,influxdb,node-red,grafana
+
+# MING stack plus host and broker metrics
+COMPOSE_PROFILES=mqtt,influxdb,node-red,grafana,telegraf
+
+# Just a broker
+COMPOSE_PROFILES=mqtt
+```
+
+Run `docker compose up -d --remove-orphans` after changing it. Node-RED needs `mqtt` and `influxdb`, and Grafana needs `influxdb`; Compose refuses to start a service whose dependency is left out. Telegraf has no hard dependencies: it retries the broker and buffers writes until InfluxDB is up.
+
+If `.env` has no `COMPOSE_PROFILES` line, plain `docker compose up` starts nothing; the `make` targets fall back to the MING stack.
+
+---
+
 ## Project Structure
 
 ```
@@ -127,6 +150,8 @@ p4n4-iot/
 │   │   ├── settings.js                # Node-RED runtime settings
 │   │   └── flows/
 │   │       └── flows.json             # MQTT-to-InfluxDB pipeline flows
+│   ├── telegraf/
+│   │   └── telegraf.conf              # Host + broker metrics (profile "telegraf")
 │   └── grafana/
 │       └── provisioning/
 │           ├── datasources/
@@ -152,7 +177,7 @@ The stack provisions five buckets automatically on first run:
 | `raw_telemetry` | 30 days | All inbound sensor readings (primary bucket) |
 | `processed_metrics` | 365 days | Downsampled / aggregated data |
 | `ai_events` | Infinite | AI annotations, anomaly flags, agent logs |
-| `system_health` | 7 days | Node-RED and stack component health metrics |
+| `system_health` | 7 days | Stack component health metrics (Telegraf host and broker metrics) |
 | `sandbox` | 30 days | Development and testing |
 
 `raw_telemetry` is the default write target for all production MQTT flows. Corresponding Grafana datasources are provisioned for each bucket.
@@ -174,6 +199,8 @@ The payload is a JSON object, for example `{"value": 23.5, "unit": "C"}`. Node-R
 | `sensors/{device_id}/{measurement}` | `raw_telemetry` bucket, `sensor_data` measurement |
 | `inference/{device_id}/result` | `raw_telemetry` bucket, `inference` measurement |
 | `sandbox/sensors/{device_id}/{measurement}`, `sandbox/inference/{device_id}/result` | `sandbox` bucket |
+
+Messages carrying `"_stored_by": "p4n4-api"` are skipped: p4n4-api's `POST /api/v1/telemetry` has already written them to InfluxDB (with the device's own timestamp, in `ts`) and publishes them here only so other flows and live views see them.
 
 Inference results from p4n4-edge are tagged with `device` from the topic, and `model` from the payload when present. Messages on `sensors/` or `inference/` topics with a different shape, such as `sensors/temperature` or `inference/results`, are dropped with a warning in the Node-RED debug sidebar.
 
@@ -234,14 +261,15 @@ devices; Node-RED's flows then need a matching subscription.
 ```bash
 make help           # Show all available commands
 
-make up             # Start the full stack
-make down           # Stop all services
+make up             # Start the services in COMPOSE_PROFILES
+make down           # Stop all services, in any profile
 make restart        # Restart all services
 make logs           # Follow logs from all services
 make ps             # Show service status
 make status         # Colorized status table
 
 make start SERVICE=grafana   # Start a single service (with deps)
+make start SERVICE=telegraf  # Also works for services not in COMPOSE_PROFILES
 make stop SERVICE=mqtt        # Stop a single service (warns about deps)
 
 make test-mqtt      # Publish test messages to MQTT
@@ -283,6 +311,7 @@ Node-RED routes the message to InfluxDB, where it becomes immediately queryable 
 | InfluxDB         | `8086`                            |
 | Node-RED         | `1880`                            |
 | Grafana          | `3000`                            |
+| Telegraf         | none (outbound only)              |
 
 ---
 

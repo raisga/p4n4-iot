@@ -1,3 +1,8 @@
+# Every service is optional: each sits in a profile of its own name, and
+# COMPOSE_PROFILES in .env lists the ones that start. The default is the MING
+# stack (mqtt, influxdb, node-red, grafana); add telegraf to collect host and
+# broker metrics. Node-RED needs mqtt and influxdb, Grafana needs influxdb.
+
 services:
 
   # ====================================================================================
@@ -10,6 +15,7 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
     container_name: p4n4-mqtt
+    profiles: [mqtt]
     restart: unless-stopped
     ports:
       - "1883:1883"   # MQTT TCP
@@ -52,6 +58,7 @@ services:
   influxdb:
     image: influxdb:2
     container_name: p4n4-influxdb
+    profiles: [influxdb]
     restart: unless-stopped
     ports:
       - "8086:8086"
@@ -61,6 +68,7 @@ services:
       DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD:-adminpassword}
       DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-ming}
       DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
+      DOCKER_INFLUXDB_INIT_RETENTION: ${INFLUXDB_RAW_RETENTION:-30d}
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
       # Additional bucket names (created by init-buckets.sh)
       INFLUXDB_BUCKET_PROCESSED: ${INFLUXDB_BUCKET_PROCESSED:-processed_metrics}
@@ -87,6 +95,7 @@ services:
   node-red:
     image: nodered/node-red:latest
     container_name: p4n4-node-red
+    profiles: [node-red]
     restart: unless-stopped
     ports:
       - "1880:1880"
@@ -126,6 +135,7 @@ services:
   grafana:
     image: grafana/grafana-oss:latest
     container_name: p4n4-grafana
+    profiles: [grafana]
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -154,6 +164,37 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    networks:
+      - p4n4-net
+
+  # ------------------------------------------------------------------------------------
+  # Metrics Agent (Telegraf) — optional, not in the default profiles
+  # ------------------------------------------------------------------------------------
+  # Writes host metrics (CPU, memory, disk, network) and Mosquitto broker stats
+  # to the system_health bucket. Sensor data still flows through Node-RED.
+  telegraf:
+    image: telegraf:1.40
+    container_name: p4n4-telegraf
+    profiles: [telegraf]
+    restart: unless-stopped
+    # Names the host in the metrics' "host" tag
+    hostname: ${TELEGRAF_HOSTNAME:-p4n4}
+    environment:
+      TZ: ${TZ:-UTC}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
+      INFLUXDB_BUCKET_HEALTH: ${INFLUXDB_BUCKET_HEALTH:-system_health}
+      TELEGRAF_INTERVAL: ${TELEGRAF_INTERVAL:-10s}
+      # Read the host's /proc, /sys and filesystems, not the container's
+      HOST_PROC: /hostfs/proc
+      HOST_SYS: /hostfs/sys
+      HOST_ETC: /hostfs/etc
+      HOST_MOUNT_PREFIX: /hostfs
+    volumes:
+      - ./config/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /:/hostfs:ro
+    # No depends_on: Telegraf retries the broker and buffers writes until
+    # InfluxDB is up, so it also runs when either is left out.
     networks:
       - p4n4-net
 

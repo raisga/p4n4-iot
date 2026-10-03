@@ -196,7 +196,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["count"],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -209,7 +209,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"raw_telemetry\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"inference\")\n  |> count()",
+          "query": "from(bucket: \"raw_telemetry\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"inference\" and r._field == \"confidence\")\n  |> group()\n  |> count()",
           "refId": "A"
         }
       ],
@@ -217,7 +217,7 @@
       "type": "stat"
     }
   ],
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": ["ming", "iot", "edge-ai"],

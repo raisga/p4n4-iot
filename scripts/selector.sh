@@ -25,6 +25,7 @@ declare -A SERVICE_DEPS=(
     [influxdb]=""
     [node-red]="mqtt,influxdb"
     [grafana]="influxdb"
+    [telegraf]=""
 )
 
 # Reverse dependency map: what breaks if you stop X
@@ -33,9 +34,14 @@ declare -A SERVICE_DEPENDENTS=(
     [influxdb]="node-red,grafana"
     [node-red]=""
     [grafana]=""
+    [telegraf]=""
 )
 
-ALL_SERVICES=(mqtt influxdb node-red grafana)
+ALL_SERVICES=(mqtt influxdb node-red grafana telegraf)
+
+# Each service sits in a Compose profile of its own name; enabling them all
+# lets this script start and stop any service, whatever COMPOSE_PROFILES says
+COMPOSE=(docker compose --profile '*')
 
 # Get container status for a service
 get_status() {
@@ -54,6 +60,7 @@ get_port() {
         influxdb)  echo "8086" ;;
         node-red)  echo "1880" ;;
         grafana)   echo "3000" ;;
+        telegraf)  echo "-" ;;
     esac
 }
 
@@ -162,14 +169,14 @@ select_with_gum() {
     local selected
     if [ ${#preselected[@]} -gt 0 ]; then
         selected=$(gum choose --no-limit \
-            --header="  MING: mqtt, influxdb, node-red, grafana" \
+            --header="  MING: mqtt, influxdb, node-red, grafana  |  optional: telegraf" \
             --cursor.foreground="6" \
             --selected.foreground="2" \
             --selected="${preselected[*]}" \
             "${options[@]}" 2>/dev/null || true)
     else
         selected=$(gum choose --no-limit \
-            --header="  MING: mqtt, influxdb, node-red, grafana" \
+            --header="  MING: mqtt, influxdb, node-red, grafana  |  optional: telegraf" \
             --cursor.foreground="6" \
             --selected.foreground="2" \
             "${options[@]}" 2>/dev/null || true)
@@ -198,7 +205,7 @@ select_without_gum() {
     print_status
 
     echo -e "${BOLD}  Available actions:${NC}"
-    echo -e "  ${GREEN}1${NC}) Start ALL services     (mqtt, influxdb, node-red, grafana)"
+    echo -e "  ${GREEN}1${NC}) Start ALL services     (${ALL_SERVICES[*]})"
     echo -e "  ${GREEN}2${NC}) Stop ALL services"
     echo -e "  ${GREEN}3${NC}) Custom selection"
     echo -e "  ${GREEN}4${NC}) Exit"
@@ -292,7 +299,7 @@ apply_selection() {
         fi
 
         echo -e "${DIM}  Stopping: ${to_stop[*]}...${NC}"
-        if ! docker compose stop "${to_stop[@]}" 2>/dev/null; then
+        if ! "${COMPOSE[@]}" stop "${to_stop[@]}" 2>/dev/null; then
             echo -e "${RED}  ERROR: Failed to stop services.${NC}"
             exit 1
         fi
@@ -309,7 +316,7 @@ apply_selection() {
 
     if [ ${#to_start[@]} -gt 0 ]; then
         echo -e "${GREEN}  Starting: ${BOLD}${to_start[*]}${NC}"
-        if ! docker compose up -d "${to_start[@]}"; then
+        if ! "${COMPOSE[@]}" up -d "${to_start[@]}"; then
             echo -e "${RED}  ERROR: Failed to start services.${NC}"
             exit 1
         fi
@@ -325,7 +332,7 @@ apply_selection() {
 # Stop all services
 stop_all() {
     echo -e "${YELLOW}  Stopping all services...${NC}"
-    docker compose down
+    "${COMPOSE[@]}" down
     echo -e "${GREEN}  All services stopped.${NC}"
 }
 

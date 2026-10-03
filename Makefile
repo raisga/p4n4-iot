@@ -14,8 +14,17 @@ BOLD   := \033[1m
 DIM    := \033[2m
 NC     := \033[0m
 
-# Service list
-MING_SERVICES := mqtt influxdb node-red grafana
+# Service list (each service is in a Compose profile of the same name)
+SERVICES := mqtt influxdb node-red grafana telegraf
+
+# Started when neither the environment nor .env sets COMPOSE_PROFILES
+DEFAULT_PROFILES := mqtt,influxdb,node-red,grafana
+ifeq ($(origin COMPOSE_PROFILES)$(shell grep -s '^COMPOSE_PROFILES=' .env),undefined)
+export COMPOSE_PROFILES := $(DEFAULT_PROFILES)
+endif
+
+# down/clean also stop services started outside COMPOSE_PROFILES (make start)
+ALL_PROFILES := --profile '*'
 
 # Default target
 help:
@@ -24,7 +33,7 @@ help:
 	@echo "  ════════════════════════════════════════════"
 	@echo ""
 	@printf "  $(BOLD)Core:$(NC)\n"
-	@printf "    $(GREEN)make up$(NC)              Start all services\n"
+	@printf "    $(GREEN)make up$(NC)              Start the services in COMPOSE_PROFILES\n"
 	@printf "    $(GREEN)make down$(NC)            Stop all services\n"
 	@printf "    $(GREEN)make restart$(NC)         Restart all services\n"
 	@printf "    $(GREEN)make status$(NC)          Show service status table\n"
@@ -65,7 +74,7 @@ up:
 
 down:
 	@echo "Stopping MING stack..."
-	docker compose down
+	docker compose $(ALL_PROFILES) down
 
 restart:
 	@echo "Restarting MING stack..."
@@ -86,7 +95,7 @@ clean:
 	@read -p "  Type 'yes' to confirm: " confirm; \
 	if [ "$$confirm" = "yes" ]; then \
 		echo "Stopping services and removing volumes..."; \
-		docker compose down -v; \
+		docker compose $(ALL_PROFILES) down -v; \
 		echo "Cleaned up!"; \
 	else \
 		echo "Cancelled."; \
@@ -102,7 +111,7 @@ status:
 	@echo "  ════════════════════════════════════════════════════════════════════"
 	@printf "  $(BOLD)%-14s %-12s %-8s %s$(NC)\n" "SERVICE" "STATUS" "PORT" "URL"
 	@printf "  $(DIM)%-14s %-12s %-8s %s$(NC)\n" "─────────────" "──────────" "──────" "───────────────────────────"
-	@for svc in mqtt influxdb node-red grafana; do \
+	@for svc in $(SERVICES); do \
 		container="p4n4-$$svc"; \
 		state=$$(docker inspect --format='{{.State.Status}}' $$container 2>/dev/null || echo "stopped"); \
 		case $$svc in \
@@ -110,6 +119,7 @@ status:
 			influxdb)  port="8086"; url="http://localhost:8086" ;; \
 			node-red)  port="1880"; url="http://localhost:1880" ;; \
 			grafana)   port="3000"; url="http://localhost:3000" ;; \
+			telegraf)  port="-";    url="-" ;; \
 		esac; \
 		if [ "$$state" = "running" ]; then \
 			printf "  $(BOLD)%-14s$(NC) $(GREEN)%-12s$(NC) %-8s %s\n" "$$svc" "running" "$$port" "$$url"; \
@@ -135,32 +145,34 @@ deps_mqtt :=
 deps_influxdb :=
 deps_node-red := mqtt influxdb
 deps_grafana := influxdb
+deps_telegraf :=
 
 # Reverse deps (what breaks)
 rdeps_mqtt := node-red
 rdeps_influxdb := node-red grafana
 rdeps_node-red :=
 rdeps_grafana :=
+rdeps_telegraf :=
 
 start:
 ifndef SERVICE
 	@printf "$(RED)  Usage: make start SERVICE=<name>$(NC)\n"
-	@printf "  Available: $(BOLD)mqtt influxdb node-red grafana$(NC)\n"
+	@printf "  Available: $(BOLD)$(SERVICES)$(NC)\n"
 	@exit 1
 endif
 	@deps="$(deps_$(SERVICE))"; \
 	if [ -n "$$deps" ]; then \
 		printf "$(YELLOW)  Auto-starting dependencies: $(BOLD)$$deps$(NC)\n"; \
-		docker compose up -d $$deps; \
+		docker compose $(foreach d,$(deps_$(SERVICE)),--profile $(d)) up -d $$deps; \
 	fi
 	@printf "$(GREEN)  Starting $(BOLD)$(SERVICE)$(NC)$(GREEN)...$(NC)\n"
-	@docker compose up -d $(SERVICE)
+	@docker compose $(foreach d,$(deps_$(SERVICE)) $(SERVICE),--profile $(d)) up -d $(SERVICE)
 	@printf "$(GREEN)$(BOLD)  Done!$(NC)\n"
 
 stop:
 ifndef SERVICE
 	@printf "$(RED)  Usage: make stop SERVICE=<name>$(NC)\n"
-	@printf "  Available: $(BOLD)mqtt influxdb node-red grafana$(NC)\n"
+	@printf "  Available: $(BOLD)$(SERVICES)$(NC)\n"
 	@exit 1
 endif
 	@rdeps="$(rdeps_$(SERVICE))"; \

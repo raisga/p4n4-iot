@@ -7,10 +7,25 @@
 
 apiVersion: 1
 
+# Installs provisioned before the fixed UIDs have hash-based UIDs, which
+# Grafana can't change in place. Delete them here so they're re-created.
+deleteDatasources:
+  - name: InfluxDB
+    orgId: 1
+  - name: InfluxDB-Processed
+    orgId: 1
+  - name: InfluxDB-AI-Events
+    orgId: 1
+  - name: InfluxDB-Health
+    orgId: 1
+  - name: InfluxDB-Sandbox
+    orgId: 1
+
 datasources:
 
   # Primary bucket — all inbound sensor readings (30d)
   - name: InfluxDB
+    uid: influxdb
     type: influxdb
     access: proxy
     url: http://influxdb:8086
@@ -26,6 +41,7 @@ datasources:
 
   # Downsampled / aggregated metrics (365d)
   - name: InfluxDB-Processed
+    uid: influxdb-processed
     type: influxdb
     access: proxy
     url: http://influxdb:8086
@@ -41,6 +57,7 @@ datasources:
 
   # AI-generated annotations, anomaly flags, agent logs (infinite)
   - name: InfluxDB-AI-Events
+    uid: influxdb-ai-events
     type: influxdb
     access: proxy
     url: http://influxdb:8086
@@ -56,6 +73,7 @@ datasources:
 
   # Stack component health metrics (7d)
   - name: InfluxDB-Health
+    uid: influxdb-health
     type: influxdb
     access: proxy
     url: http://influxdb:8086
@@ -71,6 +89,7 @@ datasources:
 
   # Sandbox for development/testing
   - name: InfluxDB-Sandbox
+    uid: influxdb-sandbox
     type: influxdb
     access: proxy
     url: http://influxdb:8086
