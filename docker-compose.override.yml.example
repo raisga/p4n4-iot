@@ -49,4 +49,3 @@ services:
   #     - ./config/mosquitto/acl:/mosquitto/config/acl:ro
   #     - ./config/mosquitto/certs:/mosquitto/certs:ro
   #     - mosquitto-data:/mosquitto/data
-  #     - mosquitto-log:/mosquitto/log

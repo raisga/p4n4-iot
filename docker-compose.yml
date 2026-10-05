@@ -3,6 +3,9 @@
 # stack (mqtt, influxdb, node-red, grafana); add telegraf to collect host and
 # broker metrics. Node-RED needs mqtt and influxdb, Grafana needs influxdb.
 
+# Images are pinned to a minor version: patch releases come in with
+# `docker compose pull`, new features don't arrive unannounced.
+
 services:
 
   # ====================================================================================
@@ -13,7 +16,7 @@ services:
   # MQTT Broker (Eclipse Mosquitto)
   # ------------------------------------------------------------------------------------
   mqtt:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.0
     container_name: p4n4-mqtt
     profiles: [mqtt]
     restart: unless-stopped
@@ -42,7 +45,6 @@ services:
       - ./config/mosquitto/bridge.sh:/p4n4/bridge.sh:ro
       - ./config/mosquitto/certs:/mosquitto/certs:ro
       - mosquitto-data:/mosquitto/data
-      - mosquitto-log:/mosquitto/log
     healthcheck:
       test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1 -W 3"]
       interval: 30s
@@ -56,7 +58,7 @@ services:
   # Time-Series Database (InfluxDB)
   # ------------------------------------------------------------------------------------
   influxdb:
-    image: influxdb:2
+    image: influxdb:2.9
     container_name: p4n4-influxdb
     profiles: [influxdb]
     restart: unless-stopped
@@ -93,7 +95,7 @@ services:
   # Workflow Engine (Node-RED)
   # ------------------------------------------------------------------------------------
   node-red:
-    image: nodered/node-red:latest
+    image: nodered/node-red:5.0
     container_name: p4n4-node-red
     profiles: [node-red]
     restart: unless-stopped
@@ -133,7 +135,8 @@ services:
   # Data Visualization (Grafana)
   # ------------------------------------------------------------------------------------
   grafana:
-    image: grafana/grafana-oss:latest
+    # grafana/grafana is the OSS image; grafana/grafana-oss stopped at 13.0.2
+    image: grafana/grafana:13.0
     container_name: p4n4-grafana
     profiles: [grafana]
     restart: unless-stopped
@@ -142,7 +145,6 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-adminpassword}
-      GF_INSTALL_PLUGINS: grafana-clock-panel,marcusolsson-json-datasource
       # Lets p4n4-dashboard's web UI show Grafana in an <iframe>
       GF_SECURITY_ALLOW_EMBEDDING: ${GRAFANA_ALLOW_EMBEDDING:-false}
       # Path Grafana serves under: "/" (default), or "/grafana/" when
@@ -214,7 +216,6 @@ networks:
 # ====================================================================================
 volumes:
   mosquitto-data:
-  mosquitto-log:
   influxdb-data:
   influxdb-config:
   node-red-data:
