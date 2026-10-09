@@ -19,7 +19,7 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: p4n4-mqtt
     profiles: [mqtt]
-    restart: unless-stopped
+    restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - "1883:1883"   # MQTT TCP
       - "9001:9001"   # MQTT WebSocket
@@ -61,7 +61,7 @@ services:
     image: influxdb:2.9
     container_name: p4n4-influxdb
     profiles: [influxdb]
-    restart: unless-stopped
+    restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - "8086:8086"
     environment:
@@ -98,7 +98,7 @@ services:
     image: nodered/node-red:5.0
     container_name: p4n4-node-red
     profiles: [node-red]
-    restart: unless-stopped
+    restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - "1880:1880"
     environment:
@@ -139,7 +139,7 @@ services:
     image: grafana/grafana:13.0
     container_name: p4n4-grafana
     profiles: [grafana]
-    restart: unless-stopped
+    restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - "3000:3000"
     environment:
@@ -178,7 +178,7 @@ services:
     image: telegraf:1.40
     container_name: p4n4-telegraf
     profiles: [telegraf]
-    restart: unless-stopped
+    restart: ${RESTART_POLICY:-unless-stopped}
     # Names the host in the metrics' "host" tag
     hostname: ${TELEGRAF_HOSTNAME:-p4n4}
     environment:
