@@ -12,6 +12,30 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-ai-events"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "purple",
+        "name": "Labels",
+        "target": {
+          "refId": "Anno",
+          "query": "// Past events System 1 labelled in batch (p4n4 ai system1 label --write), for the selected set\nfrom(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_label\" and r.set == \"${set}\" and r._field == \"subject\")\n  |> map(fn: (r) => ({_time: r._time, text: r.question + \": \" + r.choice + (if r._value != \"\" then \" (\" + r._value + \")\" else \"\"), tags: r.set}))\n  |> group()"
+        },
+        "mappings": {
+          "text": {
+            "source": "field",
+            "value": "text"
+          },
+          "tags": {
+            "source": "field",
+            "value": "tags"
+          }
+        }
       }
     ]
   },

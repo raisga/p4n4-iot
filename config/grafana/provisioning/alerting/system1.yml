@@ -1,0 +1,172 @@
+# ==============================================================================
+# System 1 drift alerts (p4n4-docs, decisions/system1.md §10.4)
+# ==============================================================================
+# One alert per set and question, from the decisions in ai_events. Each sends to the
+# "p4n4 System 1 drift" contact point: n8n's System 1 Drift workflow, which publishes
+# it on system1/drift/<set>. SYSTEM1_ALERT_TOKEN (iot .env, the same value as the
+# ai stack's) authenticates the webhook. A drift alert is a warning to evaluate the
+# set again, never an automatic change.
+# ==============================================================================
+
+apiVersion: 1
+contactPoints:
+- orgId: 1
+  name: p4n4 System 1 drift
+  receivers:
+  - uid: p4n4-system1-drift
+    type: webhook
+    settings:
+      url: http://p4n4-n8n:5678/webhook/system1-drift
+      httpMethod: POST
+      authorization_scheme: Bearer
+      authorization_credentials: $SYSTEM1_ALERT_TOKEN
+    disableResolveMessage: false
+groups:
+- orgId: 1
+  name: system1-drift
+  folder: System 1
+  interval: 15m
+  rules:
+  - uid: p4n4-system1-abstention
+    title: System 1 abstention rate doubled
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 3024000
+        to: 0
+      datasourceUid: influxdb-ai-events
+      model:
+        refId: A
+        query: "// One row per set and question: decisions (n) and abstentions (a) between start and stop\ncounts = (start, stop) => from(bucket: \"ai_events\")\n  |> range(start: start, stop: stop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({set: r.set, question: r.question, a: if r._value then 1.0 else 0.0}))\n  |> group(columns: [\"set\", \"question\"])\n  |> reduce(identity: {n: 0.0, a: 0.0}, fn: (r, accumulator) => ({n: accumulator.n + 1.0, a: accumulator.a + r.a}))\n  |> filter(fn: (r) => r.n >= 30.0)\n\n// The abstention rate of the last 7 days over that of the 28 days before (at least 5 %)\njoin(tables: {r: counts(start: -7d, stop: now()), p: counts(start: -35d, stop: -7d)}, on: [\"set\", \"question\"])\n  |> map(fn: (r) => ({set: r.set, question: r.question,\n      _value: (r.a_r / r.n_r) / (if r.a_p / r.n_p > 0.05 then r.a_p / r.n_p else 0.05)}))\n  |> group(columns: [\"set\", \"question\"])\n  |> map(fn: (r)\
+          \ => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))"
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 2
+    noDataState: OK
+    execErrState: Error
+    for: 0s
+    annotations:
+      summary: '{{ $labels.set }}.{{ $labels.question }}: the abstention rate of the last 7 days is {{ printf "%.1f" $values.B.Value }}x that of the 28 days before'
+      description: Run p4n4 ai system1 eval with recent feedback. If the gates fail on recent data, raise the threshold or remove the set (system1.md §10.4).
+      runbook_url: https://github.com/raisga/p4n4-docs/blob/main/decisions/system1.md#104-drift
+    labels:
+      p4n4: system1-drift
+      signal: abstention
+    isPaused: false
+    notification_settings:
+      receiver: p4n4 System 1 drift
+  - uid: p4n4-system1-shares
+    title: System 1 answer mix moved
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 3024000
+        to: 0
+      datasourceUid: influxdb-ai-events
+      model:
+        refId: A
+        query: "// Each option's share of the answers (abstentions apart), in points, between start and stop\nshares = (start, stop, period) => {\n  rows = from(bucket: \"ai_events\")\n    |> range(start: start, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"system1_decision\" and r._field == \"abstain\")\n    |> map(fn: (r) => ({set: r.set, question: r.question, choice: if r._value then \"(abstained)\" else r.choice, n: 1.0}))\n  per = rows |> group(columns: [\"set\", \"question\", \"choice\"]) |> sum(column: \"n\") |> group(columns: [\"set\", \"question\"])\n  all = rows |> group(columns: [\"set\", \"question\"]) |> sum(column: \"n\") |> rename(columns: {n: \"total\"})\n    |> filter(fn: (r) => r.total >= 30.0)\n  return join(tables: {a: per, b: all}, on: [\"set\", \"question\"])\n    |> map(fn: (r) => ({set: r.set, question: r.question, choice: r.choice, period: period, share: 100.0 * r.n / r.total}))\n}\n// The largest move of any option's share, last 7 days against the 28\
+          \ days before\nunion(tables: [shares(start: -7d, stop: now(), period: \"recent\"), shares(start: -35d, stop: -7d, period: \"prior\")])\n  |> group(columns: [\"set\", \"question\", \"choice\"])\n  |> pivot(rowKey: [\"set\", \"question\", \"choice\"], columnKey: [\"period\"], valueColumn: \"share\")\n  |> filter(fn: (r) => exists r.recent or exists r.prior)\n  |> map(fn: (r) => ({set: r.set, question: r.question,\n      _value: if exists r.recent and exists r.prior then (if r.recent > r.prior then r.recent - r.prior else r.prior - r.recent)\n        else if exists r.recent then r.recent else r.prior}))\n  |> group(columns: [\"set\", \"question\"])\n  |> max()\n  |> map(fn: (r) => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))"
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 20
+    noDataState: OK
+    execErrState: Error
+    for: 0s
+    annotations:
+      summary: '{{ $labels.set }}.{{ $labels.question }}: an option''s share moved by {{ printf "%.0f" $values.B.Value }} points against the 28 days before'
+      description: Run p4n4 ai system1 eval with recent feedback. If the gates fail on recent data, raise the threshold or remove the set (system1.md §10.4).
+      runbook_url: https://github.com/raisga/p4n4-docs/blob/main/decisions/system1.md#104-drift
+    labels:
+      p4n4: system1-drift
+      signal: shares
+    isPaused: false
+    notification_settings:
+      receiver: p4n4 System 1 drift
+  - uid: p4n4-system1-latency
+    title: System 1 latency p95 over half the timeout
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 3024000
+        to: 0
+      datasourceUid: influxdb-ai-events
+      model:
+        refId: A
+        query: "// Latency p95 of the last 7 days, as callers measured it\nfrom(bucket: \"ai_events\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r._field == \"latency_ms\")\n  |> map(fn: (r) => ({set: r.set, question: r.question, _time: r._time, _value: float(v: r._value)}))\n  |> group(columns: [\"set\", \"question\"])\n  |> quantile(q: 0.95, method: \"exact_selector\")\n  |> keep(columns: [\"set\", \"question\", \"_value\"])\n  |> map(fn: (r) => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))"
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 2500
+    noDataState: OK
+    execErrState: Error
+    for: 0s
+    annotations:
+      summary: '{{ $labels.set }}.{{ $labels.question }}: latency p95 {{ printf "%.0f" $values.B.Value }} ms over 7 days, more than half the callers'' 5 s timeout'
+      description: Run p4n4 ai system1 eval with recent feedback. If the gates fail on recent data, raise the threshold or remove the set (system1.md §10.4).
+      runbook_url: https://github.com/raisga/p4n4-docs/blob/main/decisions/system1.md#104-drift
+    labels:
+      p4n4: system1-drift
+      signal: latency
+    isPaused: false
+    notification_settings:
+      receiver: p4n4 System 1 drift

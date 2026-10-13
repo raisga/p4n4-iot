@@ -156,6 +156,8 @@ p4n4-iot/
 │       └── provisioning/
 │           ├── datasources/
 │           │   └── datasources.yml    # Auto-configure all InfluxDB datasources
+│           ├── alerting/
+│           │   └── system1.yml        # System 1 drift alerts, sent to n8n
 │           └── dashboards/
 │               ├── dashboards.yml     # Dashboard provisioning config
 │               └── json/
@@ -207,6 +209,8 @@ Messages carrying `"_stored_by": "p4n4-api"` are skipped: p4n4-api's `POST /api/
 Inference results from p4n4-edge are tagged with `device` from the topic, and `model` from the payload when present. Messages on `sensors/` or `inference/` topics with a different shape, such as `sensors/temperature` or `inference/results`, are dropped with a warning in the Node-RED debug sidebar.
 
 **System 1.** When p4n4-ai runs System 1 (laya, profile `system1`), its callers log every decision on `system1/decisions/{set}`, and confirmations on `system1/feedback/{set}`; the **System 1 Decision Log** tab writes them to `ai_events`, and Grafana's **System 1** dashboard shows answers, abstentions, confidence, latency, agreement with people and drift. Flows call System 1 with the **p4n4-system1** subflow (palette: p4n4 AI): the state in `msg.payload`, the set in `msg.set` or the subflow's `SET`, the answers back in `msg.payload`, and on any failure `msg.error` with a null payload. It needs `SYSTEM1_API_KEY` in `.env`, the same value as the ai stack's (`p4n4 ai system1 enable` copies it).
+
+Grafana also provisions three **System 1 drift alerts** (`provisioning/alerting/system1.yml`), one instance per set and question, evaluated every 15 minutes over the last 7 days against the 28 days before: the abstention rate doubled, an option's share moved by more than 20 points, or latency p95 over 2.5 s (half the callers' timeout). Each needs at least 30 decisions in both periods. They go to the **p4n4 System 1 drift** contact point, n8n's System 1 Drift workflow, which publishes them on `system1/drift/{set}`; `SYSTEM1_ALERT_TOKEN`, the same value as the ai stack's, authenticates them. The dashboard's **Labels** annotations show past events labelled with `p4n4 ai system1 label --write`.
 
 ---
 

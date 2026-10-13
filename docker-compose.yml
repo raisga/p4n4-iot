@@ -158,6 +158,8 @@ services:
       # Passed to provisioning templates via env var expansion
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
       INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
+      # System 1 drift alerts authenticate to n8n's system1-drift webhook with it
+      SYSTEM1_ALERT_TOKEN: ${SYSTEM1_ALERT_TOKEN:-}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
