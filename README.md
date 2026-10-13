@@ -149,7 +149,7 @@ p4n4-iot/
 │   ├── node-red/
 │   │   ├── settings.js                # Node-RED runtime settings
 │   │   └── flows/
-│   │       └── flows.json             # MQTT-to-InfluxDB pipeline flows
+│   │       └── flows.json             # MQTT-to-InfluxDB pipeline, System 1 log and subflow
 │   ├── telegraf/
 │   │   └── telegraf.conf              # Host + broker metrics (profile "telegraf")
 │   └── grafana/
@@ -159,7 +159,8 @@ p4n4-iot/
 │           └── dashboards/
 │               ├── dashboards.yml     # Dashboard provisioning config
 │               └── json/
-│                   └── iot-overview.json  # Sample IoT dashboard
+│                   ├── iot-overview.json  # Sample IoT dashboard
+│                   └── system1.json       # System 1 decisions, feedback and drift
 ├── scripts/
 │   ├── init-buckets.sh                # InfluxDB bucket initialization
 │   └── selector.sh                    # Interactive service selector
@@ -199,10 +200,13 @@ The payload is a JSON object, for example `{"value": 23.5, "unit": "C"}`. Node-R
 | `sensors/{device_id}/{measurement}` | `raw_telemetry` bucket, `sensor_data` measurement |
 | `inference/{device_id}/result` | `raw_telemetry` bucket, `inference` measurement |
 | `sandbox/sensors/{device_id}/{measurement}`, `sandbox/inference/{device_id}/result` | `sandbox` bucket |
+| `system1/decisions/{set}`, `system1/feedback/{set}` | `ai_events` bucket, `system1_decision` and `system1_feedback` measurements |
 
 Messages carrying `"_stored_by": "p4n4-api"` are skipped: p4n4-api's `POST /api/v1/telemetry` has already written them to InfluxDB (with the device's own timestamp, in `ts`) and publishes them here only so other flows and live views see them.
 
 Inference results from p4n4-edge are tagged with `device` from the topic, and `model` from the payload when present. Messages on `sensors/` or `inference/` topics with a different shape, such as `sensors/temperature` or `inference/results`, are dropped with a warning in the Node-RED debug sidebar.
+
+**System 1.** When p4n4-ai runs System 1 (laya, profile `system1`), its callers log every decision on `system1/decisions/{set}`, and confirmations on `system1/feedback/{set}`; the **System 1 Decision Log** tab writes them to `ai_events`, and Grafana's **System 1** dashboard shows answers, abstentions, confidence, latency, agreement with people and drift. Flows call System 1 with the **p4n4-system1** subflow (palette: p4n4 AI): the state in `msg.payload`, the set in `msg.set` or the subflow's `SET`, the answers back in `msg.payload`, and on any failure `msg.error` with a null payload. It needs `SYSTEM1_API_KEY` in `.env`, the same value as the ai stack's (`p4n4 ai system1 enable` copies it).
 
 ---
 

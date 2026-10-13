@@ -283,5 +283,480 @@
         "x": 980,
         "y": 420,
         "wires": []
+    },
+    {
+        "id": "tab-system1",
+        "type": "tab",
+        "label": "System 1 Decision Log",
+        "disabled": false,
+        "info": "Writes System 1 (laya) decisions to the 'ai_events' bucket.\nCallers such as n8n's Incident Escalation publish one message per request on system1/decisions/<set>; each answer becomes one 'system1_decision' point, tagged with set, question, choice, caller and checkpoint.\nConfirmations and corrections on system1/feedback/<set> become 'system1_feedback' points. States are never logged, only their sha256. The p4n4-system1 subflow (palette: p4n4 AI) calls System 1 from any flow. See p4n4-docs, decisions/system1.md §6.7."
+    },
+    {
+        "id": "comment-system1",
+        "type": "comment",
+        "z": "tab-system1",
+        "name": "system1/decisions/<set> → ai_events bucket",
+        "info": "One point per answer. Tags must match ^[a-z0-9_-]{1,64}$, or the point is dropped with a warning, so series stay bounded by the question sets' menus.\nFields: confidence, abstain, used, set_version, latency_ms, id, revision, subject, state_sha256.",
+        "x": 220,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "mqtt-system1-decisions",
+        "type": "mqtt in",
+        "z": "tab-system1",
+        "name": "system1/decisions/#",
+        "topic": "system1/decisions/#",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "broker-mosquitto",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 100,
+        "wires": [
+            ["json-system1"]
+        ]
+    },
+    {
+        "id": "json-system1",
+        "type": "json",
+        "z": "tab-system1",
+        "name": "Parse JSON",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 350,
+        "y": 100,
+        "wires": [
+            ["func-format-system1"]
+        ]
+    },
+    {
+        "id": "func-format-system1",
+        "type": "function",
+        "z": "tab-system1",
+        "name": "Format system1_decision",
+        "func": "try {\n    var token = env.get(\"INFLUXDB_TOKEN\");\n    var org = env.get(\"INFLUXDB_ORG\");\n    var bucket = env.get(\"INFLUXDB_BUCKET_AI_EVENTS\") || \"ai_events\";\n    if (!token || !org) {\n        node.error(\"INFLUXDB_TOKEN and INFLUXDB_ORG env vars must be set\", msg);\n        return null;\n    }\n\n    // Tags stay within the question sets' menus: anything else would grow series\n    // cardinality with free text, so the point is dropped\n    var TAG = /^[a-z0-9_-]{1,64}$/;\n    function clean(s) { return String(s).replace(/[\\r\\n]+/g, \" \"); }\n    function escString(s) { return '\"' + clean(s).replace(/[\\\\\"]/g, \"\\\\$&\") + '\"'; }\n    function isInt(v) { return typeof v === \"number\" && isFinite(v) && Math.floor(v) === v; }\n\n    var d = msg.payload;\n    var set = (msg.topic || \"\").split(\"/\")[2];\n    if (!d || typeof d !== \"object\" || Array.isArray(d) || !d.answers || typeof d.answers !== \"object\") {\n        node.warn(\"Ignored \" + msg.topic + \": expected a decision object with answers\");\n        return null;\n    }\n    if (d.set !== set) {\n        node.warn(\"Ignored \" + msg.topic + \": its set is \" + JSON.stringify(d.set));\n        return null;\n    }\n    var ts = Date.parse(d.ts);\n    if (isNaN(ts)) ts = Date.now();\n\n    var lines = [];\n    Object.keys(d.answers).forEach(function (question) {\n        var a = d.answers[question] || {};\n        var tags = { caller: d.caller, checkpoint: d.checkpoint, choice: a.choice, question: question, set: d.set };\n        var bad = Object.keys(tags).filter(function (k) { return !TAG.test(String(tags[k])); });\n        if (bad.length) {\n            node.warn(\"Dropped a system1_decision point from \" + msg.topic + \": tags \" + bad.join(\", \") +\n                \" must match \" + TAG);\n            return;\n        }\n        if (typeof a.confidence !== \"number\" || !isFinite(a.confidence)) {\n            node.warn(\"Dropped a system1_decision point from \" + msg.topic + \": no confidence\");\n            return;\n        }\n        var fields = [\n            \"confidence=\" + a.confidence,\n            \"abstain=\" + (a.abstain === true),\n            \"used=\" + (d.used === true),\n        ];\n        if (isInt(d.set_version)) fields.push(\"set_version=\" + d.set_version + \"i\");\n        if (isInt(d.latency_ms)) fields.push(\"latency_ms=\" + d.latency_ms + \"i\");\n        [\"id\", \"revision\", \"subject\", \"state_sha256\"].forEach(function (k) {\n            if (d[k] !== undefined && d[k] !== null) fields.push(k + \"=\" + escString(d[k]));\n        });\n        var line = \"system1_decision\";\n        Object.keys(tags).sort().forEach(function (k) { line += \",\" + k + \"=\" + tags[k]; });\n        lines.push(line + \" \" + fields.join(\",\") + \" \" + ts);\n    });\n\n    if (lines.length === 0) return null;\n    msg.payload = lines.join(\"\\n\");\n    msg.url = \"http://influxdb:8086/api/v2/write?org=\" + encodeURIComponent(org) +\n        \"&bucket=\" + encodeURIComponent(bucket) + \"&precision=ms\";\n    msg.headers = { \"Authorization\": \"Token \" + token, \"Content-Type\": \"text/plain\" };\n    return msg;\n} catch (err) {\n    node.error(\"Format error: \" + err.message, msg);\n    return null;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 560,
+        "y": 100,
+        "wires": [
+            ["http-write-system1"]
+        ]
+    },
+    {
+        "id": "http-write-system1",
+        "type": "http request",
+        "z": "tab-system1",
+        "name": "Write to ai_events bucket",
+        "method": "POST",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 790,
+        "y": 100,
+        "wires": [
+            ["debug-system1"]
+        ]
+    },
+    {
+        "id": "debug-system1",
+        "type": "debug",
+        "z": "tab-system1",
+        "name": "Decision writes",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "statusCode",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1000,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "catch-system1-write",
+        "type": "catch",
+        "z": "tab-system1",
+        "name": "InfluxDB write errors",
+        "scope": ["http-write-system1"],
+        "uncaught": false,
+        "x": 790,
+        "y": 160,
+        "wires": [
+            ["debug-system1-errors"]
+        ]
+    },
+    {
+        "id": "debug-system1-errors",
+        "type": "debug",
+        "z": "tab-system1",
+        "name": "Write errors",
+        "active": true,
+        "tosidebar": true,
+        "console": true,
+        "tostatus": true,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1000,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "subflow-system1",
+        "type": "subflow",
+        "name": "p4n4-system1",
+        "info": "Runs a System 1 (laya) question set on `msg.payload`, the state.\n\n### Inputs\n: payload (object) : the set's canonical state, e.g. `{\"alert\": \"...\"}` for incident-triage\n: set (string) : optional, the question set; defaults to the SET property\n: subject (string) : optional, what the decision is about (a device id), for the decision log\n\n### Outputs\n: payload (object) : the service's response: `answers.<question>.choice`, `confidence`, `abstain`\n: system1 (object) : `{id, set, version, used}`\n: error (string) : set on any failure, with a `null` payload\n\nAn abstained answer means \"no suggestion\": treat it like an error. Every answered request is\nlogged on `system1/decisions/<set>`. Needs `SYSTEM1_API_KEY` in Node-RED's environment, and the\nai stack's `system1` profile. See p4n4-docs, decisions/system1.md.",
+        "category": "p4n4 AI",
+        "in": [
+            {
+                "x": 60,
+                "y": 80,
+                "wires": [
+                    {
+                        "id": "sf-system1-prepare"
+                    }
+                ]
+            }
+        ],
+        "out": [
+            {
+                "x": 820,
+                "y": 80,
+                "wires": [
+                    {
+                        "id": "sf-system1-prepare",
+                        "port": 1
+                    },
+                    {
+                        "id": "sf-system1-read",
+                        "port": 0
+                    },
+                    {
+                        "id": "sf-system1-failed",
+                        "port": 0
+                    }
+                ]
+            }
+        ],
+        "env": [
+            {
+                "name": "SET",
+                "type": "str",
+                "value": "incident-triage"
+            },
+            {
+                "name": "CALLER",
+                "type": "str",
+                "value": "node-red"
+            },
+            {
+                "name": "TIMEOUT_MS",
+                "type": "num",
+                "value": "5000"
+            }
+        ],
+        "meta": {
+            "module": "p4n4-system1",
+            "desc": "Fast typed decisions with System 1 (laya)"
+        },
+        "color": "#C0DEED",
+        "icon": "font-awesome/fa-random"
+    },
+    {
+        "id": "sf-system1-prepare",
+        "type": "function",
+        "z": "subflow-system1",
+        "name": "Prepare request",
+        "func": "// p4n4-system1: runs a System 1 question set on msg.payload, the state.\n// The set is msg.set, else the subflow's SET property. On any failure the\n// subflow sets msg.error, sends a null payload and never throws (F-0.2.2).\nvar TAG = /^[a-z0-9_-]{1,64}$/;\nvar set = String(msg.set || env.get(\"SET\") || \"\");\nvar caller = String(env.get(\"CALLER\") || \"node-red\");\nvar key = env.get(\"SYSTEM1_API_KEY\");\nfunction failed(text) {\n    msg.error = text;\n    msg.payload = null;\n    return [null, msg];\n}\nif (!TAG.test(set)) return failed(\"system1: msg.set or the SET property must name a question set\");\nif (!TAG.test(caller)) return failed(\"system1: CALLER must match \" + TAG);\nif (!key) return failed(\"system1: SYSTEM1_API_KEY is not set in Node-RED's environment\");\nif (msg.payload === undefined || msg.payload === null) return failed(\"system1: msg.payload must hold the state\");\n\nmsg._system1 = { set: set, caller: caller, subject: String(msg.subject || \"\"), started: Date.now() };\nmsg.url = \"http://p4n4-system1:8000/v1/sets/\" + set;\nmsg.method = \"POST\";\nmsg.headers = { \"Authorization\": \"Bearer \" + key, \"Content-Type\": \"application/json\" };\nmsg.requestTimeout = Number(env.get(\"TIMEOUT_MS\")) || 5000;\nmsg.payload = JSON.stringify({ state: msg.payload });\ndelete msg.error;\nreturn [msg, null];\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 200,
+        "y": 80,
+        "wires": [
+            [
+                "sf-system1-http"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "sf-system1-http",
+        "type": "http request",
+        "z": "subflow-system1",
+        "name": "POST /v1/sets/<set>",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 400,
+        "y": 80,
+        "wires": [
+            [
+                "sf-system1-read"
+            ]
+        ]
+    },
+    {
+        "id": "sf-system1-read",
+        "type": "function",
+        "z": "subflow-system1",
+        "name": "Read answers",
+        "func": "// The answers, each with its abstain flag; a decision log message for every\n// answered request (docs: decisions/system1.md §6.7)\nfunction uuid() {\n    return \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function (c) {\n        var r = Math.random() * 16 | 0;\n        return (c === \"x\" ? r : (r & 0x3 | 0x8)).toString(16);\n    });\n}\nvar ctx = msg._system1 || {};\ndelete msg._system1;\ndelete msg.headers;\ndelete msg.url;\ndelete msg.method;\ndelete msg.requestTimeout;\nvar res = msg.payload;\nif (msg.statusCode !== 200 || !res || typeof res !== \"object\" || !res.answers || !res.set) {\n    var detail = res && typeof res === \"object\" && res.detail ? res.detail : String(res || \"\").slice(0, 200);\n    msg.error = \"system1: \" + ctx.set + \" answered \" + msg.statusCode + \": \" + JSON.stringify(detail);\n    msg.payload = null;\n    return [msg, null];\n}\nvar used = Object.keys(res.answers).some(function (q) { return res.answers[q].abstain === false; });\nvar snapshot = /\\/snapshots\\/([0-9a-f]{40})/.exec((res.routing || {}).repo || \"\");\nvar answers = {};\nObject.keys(res.answers).forEach(function (q) {\n    var a = res.answers[q];\n    answers[q] = { choice: a.choice, confidence: a.confidence, abstain: a.abstain };\n});\nvar decision = {\n    id: uuid(),\n    ts: new Date().toISOString(),\n    set: res.set.name,\n    set_version: res.set.version,\n    checkpoint: (res.routing || {}).model || \"\",\n    revision: snapshot ? snapshot[1].slice(0, 12) : \"\",\n    caller: ctx.caller,\n    subject: ctx.subject,\n    state_sha256: res.state_sha256 || \"\",\n    latency_ms: Date.now() - ctx.started,\n    answers: answers,\n    // The subflow can't know what its caller does next: an answer it hands on\n    // unabstained counts as used\n    used: used,\n};\nmsg.system1 = { id: decision.id, set: res.set.name, version: res.set.version, used: used };\nreturn [msg, { topic: \"system1/decisions/\" + res.set.name, payload: JSON.stringify(decision) }];\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 600,
+        "y": 80,
+        "wires": [
+            [],
+            [
+                "sf-system1-log"
+            ]
+        ]
+    },
+    {
+        "id": "sf-system1-log",
+        "type": "mqtt out",
+        "z": "subflow-system1",
+        "name": "system1/decisions/<set>",
+        "topic": "",
+        "qos": "1",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "broker-mosquitto",
+        "x": 830,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "sf-system1-catch",
+        "type": "catch",
+        "z": "subflow-system1",
+        "name": "Request errors",
+        "scope": [
+            "sf-system1-http"
+        ],
+        "uncaught": false,
+        "x": 400,
+        "y": 160,
+        "wires": [
+            [
+                "sf-system1-failed"
+            ]
+        ]
+    },
+    {
+        "id": "sf-system1-failed",
+        "type": "function",
+        "z": "subflow-system1",
+        "name": "Request failed",
+        "func": "// Refused connections, timeouts and other request errors: the same contract\nvar ctx = msg._system1 || {};\nvar text = msg.error && msg.error.message ? msg.error.message : String(msg.error || \"request failed\");\n[\"_system1\", \"headers\", \"url\", \"method\", \"requestTimeout\"].forEach(function (k) { delete msg[k]; });\nmsg.error = \"system1: \" + ctx.set + \" request failed: \" + text.slice(0, 200);\nmsg.payload = null;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 600,
+        "y": 160,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "comment-system1-feedback",
+        "type": "comment",
+        "z": "tab-system1",
+        "name": "system1/feedback/<set> → ai_events bucket",
+        "info": "One 'system1_feedback' point per confirmation or correction (n8n's Operator Intake publishes them): tags set, question, expected, choice and caller; fields agreed, abstain, set_version and id.\nA message that carries its state (a site that opted in) is also appended to /data/system1/feedback/<set>.jsonl in Node-RED's volume, for `p4n4 ai system1 feedback`. States never reach InfluxDB.",
+        "x": 230,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "mqtt-system1-feedback",
+        "type": "mqtt in",
+        "z": "tab-system1",
+        "name": "system1/feedback/#",
+        "topic": "system1/feedback/#",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "broker-mosquitto",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 280,
+        "wires": [
+            [
+                "json-system1-feedback"
+            ]
+        ]
+    },
+    {
+        "id": "json-system1-feedback",
+        "type": "json",
+        "z": "tab-system1",
+        "name": "Parse JSON",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 350,
+        "y": 280,
+        "wires": [
+            [
+                "func-format-system1-feedback"
+            ]
+        ]
+    },
+    {
+        "id": "func-format-system1-feedback",
+        "type": "function",
+        "z": "tab-system1",
+        "name": "Format system1_feedback",
+        "func": "try {\n    var token = env.get(\"INFLUXDB_TOKEN\");\n    var org = env.get(\"INFLUXDB_ORG\");\n    var bucket = env.get(\"INFLUXDB_BUCKET_AI_EVENTS\") || \"ai_events\";\n    if (!token || !org) {\n        node.error(\"INFLUXDB_TOKEN and INFLUXDB_ORG env vars must be set\", msg);\n        return null;\n    }\n    var TAG = /^[a-z0-9_-]{1,64}$/;\n    function clean(s) { return String(s).replace(/[\\r\\n]+/g, \" \"); }\n    function escString(s) { return '\"' + clean(s).replace(/[\\\\\"]/g, \"\\\\$&\") + '\"'; }\n    function isInt(v) { return typeof v === \"number\" && isFinite(v) && Math.floor(v) === v; }\n\n    var f = msg.payload;\n    var set = (msg.topic || \"\").split(\"/\")[2];\n    if (!f || typeof f !== \"object\" || Array.isArray(f) || f.set !== set || typeof f.id !== \"string\") {\n        node.warn(\"Ignored \" + msg.topic + \": expected a feedback object for set \" + JSON.stringify(set));\n        return null;\n    }\n    var tags = { caller: f.caller, choice: f.choice, expected: f.expected, question: f.question, set: f.set };\n    var bad = Object.keys(tags).filter(function (k) { return !TAG.test(String(tags[k])); });\n    if (bad.length) {\n        node.warn(\"Dropped a system1_feedback point from \" + msg.topic + \": tags \" + bad.join(\", \") +\n            \" must match \" + TAG);\n        return null;\n    }\n    var ts = Date.parse(f.ts);\n    if (isNaN(ts)) ts = Date.now();\n    var abstain = f.abstain === true;\n    var fields = [\n        \"abstain=\" + abstain,\n        // The person kept what System 1 answered (an abstained answer never agrees)\n        \"agreed=\" + (!abstain && f.choice === f.expected),\n        \"id=\" + escString(f.id),\n    ];\n    if (isInt(f.set_version)) fields.push(\"set_version=\" + f.set_version + \"i\");\n    var line = \"system1_feedback\";\n    Object.keys(tags).sort().forEach(function (k) { line += \",\" + k + \"=\" + tags[k]; });\n\n    var write = {\n        payload: line + \" \" + fields.join(\",\") + \" \" + ts,\n        url: \"http://influxdb:8086/api/v2/write?org=\" + encodeURIComponent(org) +\n            \"&bucket=\" + encodeURIComponent(bucket) + \"&precision=ms\",\n        headers: { \"Authorization\": \"Token \" + token, \"Content-Type\": \"text/plain\" },\n    };\n    // A site that opts in sends the state too: it is kept as an evaluation\n    // example in Node-RED's volume, never in InfluxDB (p4n4 ai system1 feedback)\n    var keep = null;\n    if (f.state !== undefined) {\n        keep = { filename: \"/data/system1/feedback/\" + f.set + \".jsonl\", payload: JSON.stringify(f) };\n    }\n    return [write, keep];\n} catch (err) {\n    node.error(\"Format error: \" + err.message, msg);\n    return null;\n}\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 560,
+        "y": 280,
+        "wires": [
+            [
+                "http-write-system1"
+            ],
+            [
+                "file-system1-feedback"
+            ]
+        ]
+    },
+    {
+        "id": "file-system1-feedback",
+        "type": "file",
+        "z": "tab-system1",
+        "name": "Keep example",
+        "filename": "filename",
+        "filenameType": "msg",
+        "appendNewline": true,
+        "createDir": true,
+        "overwriteFile": "false",
+        "encoding": "utf8",
+        "x": 790,
+        "y": 320,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "comment-system1-subflow",
+        "type": "comment",
+        "z": "tab-system1",
+        "name": "Example: the p4n4-system1 subflow",
+        "info": "Click the inject node to run incident-triage on one alert. Needs the ai stack's system1 profile and SYSTEM1_API_KEY in this stack's .env. On any failure msg.error is set and msg.payload is null.",
+        "x": 200,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "inject-system1-example",
+        "type": "inject",
+        "z": "tab-system1",
+        "name": "Smoke in a cabinet",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "subject",
+                "v": "example",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "{\"alert\":\"Smoke detected in electrical cabinet 3\"}",
+        "payloadType": "json",
+        "x": 170,
+        "y": 460,
+        "wires": [
+            [
+                "subflow-system1-example"
+            ]
+        ]
+    },
+    {
+        "id": "subflow-system1-example",
+        "type": "subflow:subflow-system1",
+        "z": "tab-system1",
+        "name": "incident-triage",
+        "env": [],
+        "x": 400,
+        "y": 460,
+        "wires": [
+            [
+                "debug-system1-example"
+            ]
+        ]
+    },
+    {
+        "id": "debug-system1-example",
+        "type": "debug",
+        "z": "tab-system1",
+        "name": "System 1 answer",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 620,
+        "y": 460,
+        "wires": []
     }
 ]

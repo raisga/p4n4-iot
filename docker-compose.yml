@@ -107,6 +107,10 @@ services:
       INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
       INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
       INFLUXDB_SANDBOX_BUCKET: ${INFLUXDB_SANDBOX_BUCKET:-sandbox}
+      # System 1 decisions and feedback (system1/decisions/#, system1/feedback/#) are written here
+      INFLUXDB_BUCKET_AI_EVENTS: ${INFLUXDB_BUCKET_AI_EVENTS:-ai_events}
+      # The p4n4-system1 subflow's bearer token (the ai stack's SYSTEM1_API_KEY)
+      SYSTEM1_API_KEY: ${SYSTEM1_API_KEY:-}
       FLOWS: /data/flows/flows.json
       # Editor login (no default password: logins are refused until it is set)
       NODE_RED_USER: ${NODE_RED_USER:-admin}

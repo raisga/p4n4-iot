@@ -1,0 +1,831 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "System 1 (laya) decisions and feedback from the ai_events bucket: answers, abstentions, confidence, latency, agreement with people and drift. See p4n4-docs, decisions/system1.md.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "Answers to the selected question in the time range",
+      "id": 1,
+      "title": "Decisions",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"confidence\")\n  |> group()\n  |> count()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "",
+      "id": 2,
+      "title": "Abstained",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": [
+          {
+            "color": "green",
+            "value": null
+          },
+          {
+            "color": "yellow",
+            "value": 0.5
+          },
+          {
+            "color": "red",
+            "value": 0.8
+          }
+        ],
+        "x": 4,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": "Share of answers under the set's threshold: the caller got no suggestion"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "Share of decisions whose caller used an answer",
+      "id": 3,
+      "title": "Used",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"used\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "",
+      "id": 4,
+      "title": "Agreed with people",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": [
+          {
+            "color": "red",
+            "value": null
+          },
+          {
+            "color": "yellow",
+            "value": 0.8
+          },
+          {
+            "color": "green",
+            "value": 0.9
+          }
+        ],
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": "Of the answers System 1 gave (not abstained) and a person then confirmed or corrected, the share they kept"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_feedback\" and r.set == \"${set}\" and r.question == \"${question}\" and (r._field == \"agreed\" or r._field == \"abstain\"))\n  |> pivot(rowKey: [\"_time\", \"caller\", \"choice\", \"expected\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => not r.abstain)\n  |> map(fn: (r) => ({_time: r._time, _value: if r.agreed then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "",
+      "id": 5,
+      "title": "Latency p95",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": [
+          {
+            "color": "green",
+            "value": null
+          },
+          {
+            "color": "yellow",
+            "value": 1500
+          },
+          {
+            "color": "red",
+            "value": 2500
+          }
+        ],
+        "x": 16,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": "As the caller measured it, network and queueing included. Keep it under half the caller's timeout"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> quantile(q: 0.95, method: \"exact_selector\")\n  |> keep(columns: [\"_value\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "The set version of the latest decision",
+      "id": 6,
+      "title": "Set version",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"set_version\")\n  |> group()\n  |> sort(columns: [\"_time\"])\n  |> last()\n  |> keep(columns: [\"_value\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "Answers per option, abstentions apart",
+      "id": 7,
+      "title": "Answers by choice",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 20,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, choice: if r._value then \"(abstained)\" else r.choice, _value: 1}))\n  |> group(columns: [\"choice\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: sum, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "Share of answers under the threshold",
+      "id": 8,
+      "title": "Abstention rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"abstained\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "id": 9,
+      "title": "Confidence distribution",
+      "type": "histogram",
+      "description": "The confidence of every answer to the selected question; the set's threshold splits it",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "fillOpacity": 60,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "bucketSize": 0.05,
+        "bucketOffset": 0,
+        "combine": true,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"confidence\")\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "description": "p50 and p95 as the caller measured them",
+      "id": 10,
+      "title": "Latency",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: (column, tables=<-) => tables |> quantile(q: 0.5, method: \"exact_selector\", column: column), createEmpty: false)\n  |> set(key: \"_field\", value: \"p50\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: (column, tables=<-) => tables |> quantile(q: 0.95, method: \"exact_selector\", column: column), createEmpty: false)\n  |> set(key: \"_field\", value: \"p95\")",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "id": 11,
+      "title": "Drift: last 7 days against the 28 days before",
+      "type": "table",
+      "description": "Rerun the evaluation with recent feedback when an option moves by more than 20 points or the abstention rate doubles (system1.md §10.4). Ignores the time picker.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Change (points)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": -20
+                    },
+                    {
+                      "color": "red",
+                      "value": 20
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "// Each option's share of the answers, and the abstention rate, in the last 7\n// days against the 28 days before (docs: decisions/system1.md §10.4). A move of\n// more than 20 points, or a doubled abstention rate, means: evaluate again.\nshare = (start, stop, period) => {\n  rows = from(bucket: \"ai_events\")\n    |> range(start: start, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n    |> map(fn: (r) => ({key: 1, choice: if r._value then \"(abstained)\" else r.choice, n: 1.0}))\n    |> group()\n  per = rows |> group(columns: [\"key\", \"choice\"]) |> sum(column: \"n\") |> group()\n  all = rows |> group(columns: [\"key\"]) |> sum(column: \"n\") |> rename(columns: {n: \"total\"}) |> group()\n  return join(tables: {a: per, b: all}, on: [\"key\"])\n    |> map(fn: (r) => ({choice: r.choice, period: period, share: 100.0 * r.n / r.total}))\n}\nunion(tables: [\n  share(start: -7d, stop: now(), period: \"Last 7 days (%)\"),\n  share(start: -35d, stop: -7d, period: \"28 days before (%)\"),\n])\n  |> group()\n  |> pivot(rowKey: [\"choice\"], columnKey: [\"period\"], valueColumn: \"share\")\n  |> map(fn: (r) => ({r with \"Change (points)\": if exists r[\"Last 7 days (%)\"] and exists r[\"28 days before (%)\"] then r[\"Last 7 days (%)\"] - r[\"28 days before (%)\"] else if exists r[\"Last 7 days (%)\"] then r[\"Last 7 days (%)\"] else 0.0 - r[\"28 days before (%)\"]}))\n  |> sort(columns: [\"choice\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-ai-events"
+      },
+      "id": 12,
+      "title": "Feedback: confirmed (rows) against answered (columns)",
+      "type": "table",
+      "description": "From system1/feedback/<set>: every confirmation or correction a person made",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-ai-events"
+          },
+          "query": "// Confirmations and corrections: what people chose, against what System 1 answered\nfrom(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_feedback\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({expected: r.expected, answered: if r._value then \"(abstained)\" else r.choice, n: 1}))\n  |> group(columns: [\"expected\", \"answered\"])\n  |> sum(column: \"n\")\n  |> group()\n  |> pivot(rowKey: [\"expected\"], columnKey: [\"answered\"], valueColumn: \"n\")\n  |> sort(columns: [\"expected\"])",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "p4n4",
+    "system1",
+    "ai"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "set",
+        "label": "Set",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-ai-events"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"set\", predicate: (r) => r._measurement == \"system1_decision\", start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"set\", predicate: (r) => r._measurement == \"system1_decision\", start: -90d)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "question",
+        "label": "Question",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-ai-events"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"question\", predicate: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\", start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"question\", predicate: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\", start: -90d)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "System 1",
+  "uid": "p4n4-system1",
+  "version": 1,
+  "weekStart": ""
+}
