@@ -86,8 +86,40 @@ groups:
       datasourceUid: influxdb-ai-events
       model:
         refId: A
-        query: "// Each option's share of the answers (abstentions apart), in points, between start and stop\nshares = (start, stop, period) => {\n  rows = from(bucket: \"ai_events\")\n    |> range(start: start, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"system1_decision\" and r._field == \"abstain\")\n    |> map(fn: (r) => ({set: r.set, question: r.question, choice: if r._value then \"(abstained)\" else r.choice, n: 1.0}))\n  per = rows |> group(columns: [\"set\", \"question\", \"choice\"]) |> sum(column: \"n\") |> group(columns: [\"set\", \"question\"])\n  all = rows |> group(columns: [\"set\", \"question\"]) |> sum(column: \"n\") |> rename(columns: {n: \"total\"})\n    |> filter(fn: (r) => r.total >= 30.0)\n  return join(tables: {a: per, b: all}, on: [\"set\", \"question\"])\n    |> map(fn: (r) => ({set: r.set, question: r.question, choice: r.choice, period: period, share: 100.0 * r.n / r.total}))\n}\n// The largest move of any option's share, last 7 days against the 28\
-          \ days before\nunion(tables: [shares(start: -7d, stop: now(), period: \"recent\"), shares(start: -35d, stop: -7d, period: \"prior\")])\n  |> group(columns: [\"set\", \"question\", \"choice\"])\n  |> pivot(rowKey: [\"set\", \"question\", \"choice\"], columnKey: [\"period\"], valueColumn: \"share\")\n  |> filter(fn: (r) => exists r.recent or exists r.prior)\n  |> map(fn: (r) => ({set: r.set, question: r.question,\n      _value: if exists r.recent and exists r.prior then (if r.recent > r.prior then r.recent - r.prior else r.prior - r.recent)\n        else if exists r.recent then r.recent else r.prior}))\n  |> group(columns: [\"set\", \"question\"])\n  |> max()\n  |> map(fn: (r) => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))"
+        query: |-
+          // Each option's share of the answers (abstentions apart), in points, between start and stop
+          shares = (start, stop, period) => {
+            rows = from(bucket: "ai_events")
+              |> range(start: start, stop: stop)
+              |> filter(fn: (r) => r._measurement == "system1_decision" and r._field == "abstain")
+              |> map(fn: (r) => ({set: r.set, question: r.question, choice: if r._value then "(abstained)" else r.choice, n: 1.0}))
+            per = rows |> group(columns: ["set", "question", "choice"]) |> sum(column: "n") |> group(columns: ["set", "question"])
+            all = rows |> group(columns: ["set", "question"]) |> sum(column: "n") |> rename(columns: {n: "total"})
+              |> filter(fn: (r) => r.total >= 30.0)
+            return join(tables: {a: per, b: all}, on: ["set", "question"])
+              |> map(fn: (r) => ({set: r.set, question: r.question, choice: r.choice, period: period, share: 100.0 * r.n / r.total}))
+          }
+          // Sets and questions with at least 30 decisions in both periods: a new one has no mix to move from
+          counted = (start, stop) => from(bucket: "ai_events")
+            |> range(start: start, stop: stop)
+            |> filter(fn: (r) => r._measurement == "system1_decision" and r._field == "abstain")
+            |> group(columns: ["set", "question"])
+            |> count()
+            |> filter(fn: (r) => r._value >= 30)
+            |> keep(columns: ["set", "question"])
+          both = join(tables: {r: counted(start: -7d, stop: now()), p: counted(start: -35d, stop: -7d)}, on: ["set", "question"])
+          // The largest move of any option's share, last 7 days against the 28 days before
+          moves = union(tables: [shares(start: -7d, stop: now(), period: "recent"), shares(start: -35d, stop: -7d, period: "prior")])
+            |> group(columns: ["set", "question", "choice"])
+            |> pivot(rowKey: ["set", "question", "choice"], columnKey: ["period"], valueColumn: "share")
+            |> filter(fn: (r) => exists r.recent or exists r.prior)
+            |> map(fn: (r) => ({set: r.set, question: r.question,
+                _value: if exists r.recent and exists r.prior then (if r.recent > r.prior then r.recent - r.prior else r.prior - r.recent)
+                  else if exists r.recent then r.recent else r.prior}))
+            |> group(columns: ["set", "question"])
+            |> max()
+          join(tables: {m: moves, b: both}, on: ["set", "question"])
+            |> map(fn: (r) => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))
         intervalMs: 60000
         maxDataPoints: 43200
     - refId: B
@@ -134,7 +166,20 @@ groups:
       datasourceUid: influxdb-ai-events
       model:
         refId: A
-        query: "// Latency p95 of the last 7 days, as callers measured it\nfrom(bucket: \"ai_events\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r._field == \"latency_ms\")\n  |> map(fn: (r) => ({set: r.set, question: r.question, _time: r._time, _value: float(v: r._value)}))\n  |> group(columns: [\"set\", \"question\"])\n  |> quantile(q: 0.95, method: \"exact_selector\")\n  |> keep(columns: [\"set\", \"question\", \"_value\"])\n  |> map(fn: (r) => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))"
+        query: |-
+          // Latency p95 of the last 7 days, as callers measured it
+          rows = from(bucket: "ai_events")
+            |> range(start: -7d)
+            |> filter(fn: (r) => r._measurement == "system1_decision" and r._field == "latency_ms")
+            |> map(fn: (r) => ({set: r.set, question: r.question, _time: r._time, _value: float(v: r._value)}))
+            |> group(columns: ["set", "question"])
+          // At least 30 decisions, as the other alerts ask: a few slow first requests are not a trend
+          counted = rows |> count() |> filter(fn: (r) => r._value >= 30) |> keep(columns: ["set", "question"])
+          p95 = rows
+            |> quantile(q: 0.95, method: "exact_selector")
+            |> keep(columns: ["set", "question", "_value"])
+          join(tables: {q: p95, n: counted}, on: ["set", "question"])
+            |> map(fn: (r) => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))
         intervalMs: 60000
         maxDataPoints: 43200
     - refId: B
