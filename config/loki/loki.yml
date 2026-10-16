@@ -1,0 +1,52 @@
+# ==============================================================================
+# Loki: the stack's container logs (profile "loki")
+# ==============================================================================
+#
+#   Docker containers ──► Alloy (profile "alloy") ──► Loki ──► Grafana
+#
+# A single process with its index and chunks on the loki-data volume. Grafana
+# reads it as the "Loki" data source; nothing else needs to reach it, so its
+# port isn't published.
+#
+# ${VAR} values come from the container environment (-config.expand-env=true).
+# ==============================================================================
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+
+schema_config:
+  configs:
+    - from: 2026-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # Logs older than this are deleted by the compactor
+  retention_period: ${LOKI_RETENTION:-168h}
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

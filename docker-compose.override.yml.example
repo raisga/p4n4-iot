@@ -11,12 +11,14 @@
 services:
 
   # ----------------------------------------------------------------------------
-  # Node-RED: expose debug port or mount custom node modules
+  # Node-RED: expose the Node.js inspector, or mount nodes under development
+  # (published packages: NODE_RED_PACKAGES in .env)
   # ----------------------------------------------------------------------------
   # node-red:
   #   ports:
-  #     - "1880:1880"
-  #     - "9229:9229"   # Node.js inspector for debugging
+  #     - "127.0.0.1:9229:9229"   # Node.js inspector for debugging
+  #   environment:
+  #     NODE_OPTIONS: --inspect=0.0.0.0:9229
   #   volumes:
   #     - ./config/node-red/custom-nodes:/data/node_modules/custom:ro
 
@@ -36,16 +38,13 @@ services:
   #     GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
 
   # ----------------------------------------------------------------------------
-  # MQTT: enable TLS (requires cert files in config/mosquitto/certs/)
+  # Telegraf: Docker container metrics (CPU, memory, network per container).
+  # Add [[inputs.docker]] with endpoint = "unix:///var/run/docker.sock" to
+  # config/telegraf/telegraf.conf. The socket gives read access to every
+  # container's configuration, environment included.
   # ----------------------------------------------------------------------------
-  # mqtt:
-  #   ports:
-  #     - "1883:1883"
-  #     - "8883:8883"   # MQTT/TLS
-  #     - "9001:9001"
+  # telegraf:
   #   volumes:
-  #     - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-  #     - ./config/mosquitto/passwd:/mosquitto/config/passwd:ro
-  #     - ./config/mosquitto/acl:/mosquitto/config/acl:ro
-  #     - ./config/mosquitto/certs:/mosquitto/certs:ro
-  #     - mosquitto-data:/mosquitto/data
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #   group_add:
+  #     - "${DOCKER_GID:-999}"   # getent group docker | cut -d: -f3

@@ -1,53 +1,46 @@
 # ==============================================================================
 # Mosquitto ACL File — Example
 # ==============================================================================
-# Access Control List for MQTT topic authorization.
-# Save as 'acl' (no .example extension) and reference in mosquitto.conf:
+# Topic access per device login. Copy to 'acl' (no .example extension, kept out
+# of git) and restart the broker: docker compose restart mqtt
 #
-#   acl_file /mosquitto/config/acl
+# It applies to the device listeners (MQTT_PORT, MQTT_WS_PORT, MQTT_TLS_PORT)
+# once MQTT_USER and MQTT_PASSWORD are set in .env. The stack's own services
+# (Node-RED, Telegraf, the ai stack) use the internal listener on p4n4-net and
+# aren't affected, and the MQTT_USER account always has access to every topic.
+# An account with no matching line here can't publish or subscribe at all.
 #
-# Mount in docker-compose.yml:
-#   - ./config/mosquitto/acl:/mosquitto/config/acl:ro
+# Topics (README: MQTT Topic Convention):
+#   sensors/<device-id>/<measurement>      readings
+#   inference/<device-id>/result           edge inference results
+#   sandbox/...                            the same, written to the sandbox bucket
+#   commands/<device-id>/...               commands to a device (by convention)
 #
-# Topic convention: {site}/{device_type}/{device_id}/{measurement}
-#   e.g.  factory/temp_sensor/T001/celsius
-#         factory/humidity_sensor/H001/percent
-#
-# Permission levels:
-#   read     - subscribe only
-#   write    - publish only
-#   readwrite - both
+# Permission levels: read (subscribe), write (publish), readwrite (both).
+# In "pattern" lines, %u is the login's username and %c its client ID.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# Node-RED service account — full access to all IoT topics
+# Every device: a login per device, named after its device ID. It publishes
+# readings and inference results under its own ID only, and reads its commands.
 # ------------------------------------------------------------------------------
-user node-red
-topic readwrite sensors/#
-topic readwrite inference/#
-topic readwrite sandbox/#
-topic readwrite +/+/+/#
+pattern write sensors/%u/#
+pattern write inference/%u/result
+pattern write sandbox/sensors/%u/#
+pattern read commands/%u/#
 
 # ------------------------------------------------------------------------------
-# IoT device accounts — write sensor data, read commands
-# ------------------------------------------------------------------------------
-# Generic device pattern (replace with per-device accounts in production)
-user iot-device-001
-topic write sensors/iot-device-001/+
-topic write +/+/iot-device-001/#
-topic read commands/iot-device-001/#
-
-# ------------------------------------------------------------------------------
-# Read-only monitoring account (e.g. for dashboards / external tools)
+# Read-only monitoring account (e.g. dashboards, MQTT Web UI for operators)
 # ------------------------------------------------------------------------------
 user monitor
 topic read sensors/#
 topic read inference/#
-topic read +/+/+/#
+topic read system1/#
 topic read $SYS/#
 
 # ------------------------------------------------------------------------------
-# Sandbox — unrestricted for development
+# Operator account that sends commands to devices
 # ------------------------------------------------------------------------------
-user sandbox
-topic readwrite sandbox/#
+user operator
+topic read #
+topic write commands/#

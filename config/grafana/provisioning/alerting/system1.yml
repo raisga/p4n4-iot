@@ -38,7 +38,7 @@ groups:
       datasourceUid: influxdb-ai-events
       model:
         refId: A
-        query: "// One row per set and question: decisions (n) and abstentions (a) between start and stop\ncounts = (start, stop) => from(bucket: \"ai_events\")\n  |> range(start: start, stop: stop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({set: r.set, question: r.question, a: if r._value then 1.0 else 0.0}))\n  |> group(columns: [\"set\", \"question\"])\n  |> reduce(identity: {n: 0.0, a: 0.0}, fn: (r, accumulator) => ({n: accumulator.n + 1.0, a: accumulator.a + r.a}))\n  |> filter(fn: (r) => r.n >= 30.0)\n\n// The abstention rate of the last 7 days over that of the 28 days before (at least 5 %)\njoin(tables: {r: counts(start: -7d, stop: now()), p: counts(start: -35d, stop: -7d)}, on: [\"set\", \"question\"])\n  |> map(fn: (r) => ({set: r.set, question: r.question,\n      _value: (r.a_r / r.n_r) / (if r.a_p / r.n_p > 0.05 then r.a_p / r.n_p else 0.05)}))\n  |> group(columns: [\"set\", \"question\"])\n  |> map(fn: (r)\
+        query: "// One row per set and question: decisions (n) and abstentions (a) between start and stop\ncounts = (start, stop) => from(bucket: v.defaultBucket)\n  |> range(start: start, stop: stop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({set: r.set, question: r.question, a: if r._value then 1.0 else 0.0}))\n  |> group(columns: [\"set\", \"question\"])\n  |> reduce(identity: {n: 0.0, a: 0.0}, fn: (r, accumulator) => ({n: accumulator.n + 1.0, a: accumulator.a + r.a}))\n  |> filter(fn: (r) => r.n >= 30.0)\n\n// The abstention rate of the last 7 days over that of the 28 days before (at least 5 %)\njoin(tables: {r: counts(start: -7d, stop: now()), p: counts(start: -35d, stop: -7d)}, on: [\"set\", \"question\"])\n  |> map(fn: (r) => ({set: r.set, question: r.question,\n      _value: (r.a_r / r.n_r) / (if r.a_p / r.n_p > 0.05 then r.a_p / r.n_p else 0.05)}))\n  |> group(columns: [\"set\", \"question\"])\n  |> map(fn: (r)\
           \ => ({set: r.set, question: r.question, _value: float(v: r._value), _time: now()}))"
         intervalMs: 60000
         maxDataPoints: 43200
@@ -89,7 +89,7 @@ groups:
         query: |-
           // Each option's share of the answers (abstentions apart), in points, between start and stop
           shares = (start, stop, period) => {
-            rows = from(bucket: "ai_events")
+            rows = from(bucket: v.defaultBucket)
               |> range(start: start, stop: stop)
               |> filter(fn: (r) => r._measurement == "system1_decision" and r._field == "abstain")
               |> map(fn: (r) => ({set: r.set, question: r.question, choice: if r._value then "(abstained)" else r.choice, n: 1.0}))
@@ -100,7 +100,7 @@ groups:
               |> map(fn: (r) => ({set: r.set, question: r.question, choice: r.choice, period: period, share: 100.0 * r.n / r.total}))
           }
           // Sets and questions with at least 30 decisions in both periods: a new one has no mix to move from
-          counted = (start, stop) => from(bucket: "ai_events")
+          counted = (start, stop) => from(bucket: v.defaultBucket)
             |> range(start: start, stop: stop)
             |> filter(fn: (r) => r._measurement == "system1_decision" and r._field == "abstain")
             |> group(columns: ["set", "question"])
@@ -168,7 +168,7 @@ groups:
         refId: A
         query: |-
           // Latency p95 of the last 7 days, as callers measured it
-          rows = from(bucket: "ai_events")
+          rows = from(bucket: v.defaultBucket)
             |> range(start: -7d)
             |> filter(fn: (r) => r._measurement == "system1_decision" and r._field == "latency_ms")
             |> map(fn: (r) => ({set: r.set, question: r.question, _time: r._time, _value: float(v: r._value)}))

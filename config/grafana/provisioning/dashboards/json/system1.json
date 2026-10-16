@@ -24,7 +24,7 @@
         "name": "Labels",
         "target": {
           "refId": "Anno",
-          "query": "// Past events System 1 labelled in batch (p4n4 ai system1 label --write), for the selected set\nfrom(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_label\" and r.set == \"${set}\" and r._field == \"subject\")\n  |> map(fn: (r) => ({_time: r._time, text: r.question + \": \" + r.choice + (if r._value != \"\" then \" (\" + r._value + \")\" else \"\"), tags: r.set}))\n  |> group()"
+          "query": "// Past events System 1 labelled in batch (p4n4 ai system1 label --write), for the selected set\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_label\" and r.set == \"${set}\" and r._field == \"subject\")\n  |> map(fn: (r) => ({_time: r._time, text: r.question + \": \" + r.choice + (if r._value != \"\" then \" (\" + r._value + \")\" else \"\"), tags: r.set}))\n  |> group()"
         },
         "mappings": {
           "text": {
@@ -102,7 +102,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"confidence\")\n  |> group()\n  |> count()",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"confidence\")\n  |> group()\n  |> count()",
           "refId": "A"
         }
       ]
@@ -170,7 +170,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
           "refId": "A"
         }
       ]
@@ -230,7 +230,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"used\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"used\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
           "refId": "A"
         }
       ]
@@ -298,7 +298,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_feedback\" and r.set == \"${set}\" and r.question == \"${question}\" and (r._field == \"agreed\" or r._field == \"abstain\"))\n  |> pivot(rowKey: [\"_time\", \"caller\", \"choice\", \"expected\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => not r.abstain)\n  |> map(fn: (r) => ({_time: r._time, _value: if r.agreed then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_feedback\" and r.set == \"${set}\" and r.question == \"${question}\" and (r._field == \"agreed\" or r._field == \"abstain\"))\n  |> pivot(rowKey: [\"_time\", \"caller\", \"choice\", \"expected\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => not r.abstain)\n  |> map(fn: (r) => ({_time: r._time, _value: if r.agreed then 1.0 else 0.0}))\n  |> group()\n  |> mean()",
           "refId": "A"
         }
       ]
@@ -366,7 +366,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> quantile(q: 0.95, method: \"exact_selector\")\n  |> keep(columns: [\"_value\"])",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> quantile(q: 0.95, method: \"exact_selector\")\n  |> keep(columns: [\"_value\"])",
           "refId": "A"
         }
       ]
@@ -426,7 +426,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"set_version\")\n  |> group()\n  |> sort(columns: [\"_time\"])\n  |> last()\n  |> keep(columns: [\"_value\"])",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"set_version\")\n  |> group()\n  |> sort(columns: [\"_time\"])\n  |> last()\n  |> keep(columns: [\"_value\"])",
           "refId": "A"
         }
       ]
@@ -483,7 +483,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, choice: if r._value then \"(abstained)\" else r.choice, _value: 1}))\n  |> group(columns: [\"choice\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: sum, createEmpty: false)",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, choice: if r._value then \"(abstained)\" else r.choice, _value: 1}))\n  |> group(columns: [\"choice\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: sum, createEmpty: false)",
           "refId": "A"
         }
       ]
@@ -540,7 +540,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"abstained\")",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 1.0 else 0.0}))\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"abstained\")",
           "refId": "A"
         }
       ]
@@ -591,7 +591,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"confidence\")\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"confidence\")\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])",
           "refId": "A"
         }
       ]
@@ -648,7 +648,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: (column, tables=<-) => tables |> quantile(q: 0.5, method: \"exact_selector\", column: column), createEmpty: false)\n  |> set(key: \"_field\", value: \"p50\")",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: (column, tables=<-) => tables |> quantile(q: 0.5, method: \"exact_selector\", column: column), createEmpty: false)\n  |> set(key: \"_field\", value: \"p50\")",
           "refId": "A"
         },
         {
@@ -656,7 +656,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "from(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: (column, tables=<-) => tables |> quantile(q: 0.95, method: \"exact_selector\", column: column), createEmpty: false)\n  |> set(key: \"_field\", value: \"p95\")",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: (column, tables=<-) => tables |> quantile(q: 0.95, method: \"exact_selector\", column: column), createEmpty: false)\n  |> set(key: \"_field\", value: \"p95\")",
           "refId": "B"
         }
       ]
@@ -740,7 +740,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "// Each option's share of the answers, and the abstention rate, in the last 7\n// days against the 28 days before (docs: decisions/system1.md §10.4). A move of\n// more than 20 points, or a doubled abstention rate, means: evaluate again.\nshare = (start, stop, period) => {\n  rows = from(bucket: \"ai_events\")\n    |> range(start: start, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n    |> map(fn: (r) => ({key: 1, choice: if r._value then \"(abstained)\" else r.choice, n: 1.0}))\n    |> group()\n  per = rows |> group(columns: [\"key\", \"choice\"]) |> sum(column: \"n\") |> group()\n  all = rows |> group(columns: [\"key\"]) |> sum(column: \"n\") |> rename(columns: {n: \"total\"}) |> group()\n  return join(tables: {a: per, b: all}, on: [\"key\"])\n    |> map(fn: (r) => ({choice: r.choice, period: period, share: 100.0 * r.n / r.total}))\n}\nunion(tables: [\n  share(start: -7d, stop: now(), period: \"Last 7 days (%)\"),\n  share(start: -35d, stop: -7d, period: \"28 days before (%)\"),\n])\n  |> group()\n  |> pivot(rowKey: [\"choice\"], columnKey: [\"period\"], valueColumn: \"share\")\n  |> map(fn: (r) => ({r with \"Change (points)\": if exists r[\"Last 7 days (%)\"] and exists r[\"28 days before (%)\"] then r[\"Last 7 days (%)\"] - r[\"28 days before (%)\"] else if exists r[\"Last 7 days (%)\"] then r[\"Last 7 days (%)\"] else 0.0 - r[\"28 days before (%)\"]}))\n  |> sort(columns: [\"choice\"])",
+          "query": "// Each option's share of the answers, and the abstention rate, in the last 7\n// days against the 28 days before (docs: decisions/system1.md §10.4). A move of\n// more than 20 points, or a doubled abstention rate, means: evaluate again.\nshare = (start, stop, period) => {\n  rows = from(bucket: v.defaultBucket)\n    |> range(start: start, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n    |> map(fn: (r) => ({key: 1, choice: if r._value then \"(abstained)\" else r.choice, n: 1.0}))\n    |> group()\n  per = rows |> group(columns: [\"key\", \"choice\"]) |> sum(column: \"n\") |> group()\n  all = rows |> group(columns: [\"key\"]) |> sum(column: \"n\") |> rename(columns: {n: \"total\"}) |> group()\n  return join(tables: {a: per, b: all}, on: [\"key\"])\n    |> map(fn: (r) => ({choice: r.choice, period: period, share: 100.0 * r.n / r.total}))\n}\nunion(tables: [\n  share(start: -7d, stop: now(), period: \"Last 7 days (%)\"),\n  share(start: -35d, stop: -7d, period: \"28 days before (%)\"),\n])\n  |> group()\n  |> pivot(rowKey: [\"choice\"], columnKey: [\"period\"], valueColumn: \"share\")\n  |> map(fn: (r) => ({r with \"Change (points)\": if exists r[\"Last 7 days (%)\"] and exists r[\"28 days before (%)\"] then r[\"Last 7 days (%)\"] - r[\"28 days before (%)\"] else if exists r[\"Last 7 days (%)\"] then r[\"Last 7 days (%)\"] else 0.0 - r[\"28 days before (%)\"]}))\n  |> sort(columns: [\"choice\"])",
           "refId": "A"
         }
       ]
@@ -788,7 +788,7 @@
             "type": "influxdb",
             "uid": "influxdb-ai-events"
           },
-          "query": "// Confirmations and corrections: what people chose, against what System 1 answered\nfrom(bucket: \"ai_events\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_feedback\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({expected: r.expected, answered: if r._value then \"(abstained)\" else r.choice, n: 1}))\n  |> group(columns: [\"expected\", \"answered\"])\n  |> sum(column: \"n\")\n  |> group()\n  |> pivot(rowKey: [\"expected\"], columnKey: [\"answered\"], valueColumn: \"n\")\n  |> sort(columns: [\"expected\"])",
+          "query": "// Confirmations and corrections: what people chose, against what System 1 answered\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system1_feedback\" and r.set == \"${set}\" and r.question == \"${question}\" and r._field == \"abstain\")\n  |> map(fn: (r) => ({expected: r.expected, answered: if r._value then \"(abstained)\" else r.choice, n: 1}))\n  |> group(columns: [\"expected\", \"answered\"])\n  |> sum(column: \"n\")\n  |> group()\n  |> pivot(rowKey: [\"expected\"], columnKey: [\"answered\"], valueColumn: \"n\")\n  |> sort(columns: [\"expected\"])",
           "refId": "A"
         }
       ]
@@ -812,8 +812,8 @@
           "type": "influxdb",
           "uid": "influxdb-ai-events"
         },
-        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"set\", predicate: (r) => r._measurement == \"system1_decision\", start: -90d)",
-        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"set\", predicate: (r) => r._measurement == \"system1_decision\", start: -90d)",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: v.defaultBucket, tag: \"set\", predicate: (r) => r._measurement == \"system1_decision\", start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: v.defaultBucket, tag: \"set\", predicate: (r) => r._measurement == \"system1_decision\", start: -90d)",
         "refresh": 2,
         "sort": 1,
         "includeAll": false,
@@ -830,8 +830,8 @@
           "type": "influxdb",
           "uid": "influxdb-ai-events"
         },
-        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"question\", predicate: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\", start: -90d)",
-        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"ai_events\", tag: \"question\", predicate: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\", start: -90d)",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: v.defaultBucket, tag: \"question\", predicate: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\", start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: v.defaultBucket, tag: \"question\", predicate: (r) => r._measurement == \"system1_decision\" and r.set == \"${set}\", start: -90d)",
         "refresh": 2,
         "sort": 1,
         "includeAll": false,

@@ -13,6 +13,9 @@ docker-compose.override.yml
 # Docker volumes (if mounted locally)
 data/
 
+# make backup
+backups/
+
 # Mosquitto auth files (generated, contain hashed passwords)
 config/mosquitto/passwd
 config/mosquitto/acl
@@ -20,18 +23,8 @@ config/mosquitto/certs/*
 !config/mosquitto/certs/.gitkeep
 
 # Node-RED
-config/node-red/flows_cred.json
 config/node-red/flows/flows_cred.json
 config/node-red/flows/.*.backup
-config/node-red/*.backup
-config/node-red/.config*
-config/node-red/lib/
-config/node-red/node_modules/
-config/node-red/package-lock.json
-
-# Grafana
-config/grafana/grafana.db
-config/grafana/grafana.db-journal
 
 # IDE
 .idea/

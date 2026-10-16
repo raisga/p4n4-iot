@@ -26,6 +26,9 @@ declare -A SERVICE_DEPS=(
     [node-red]="mqtt,influxdb"
     [grafana]="influxdb"
     [telegraf]=""
+    [loki]=""
+    [alloy]="loki"
+    [mqtt-ui]=""
 )
 
 # Reverse dependency map: what breaks if you stop X
@@ -35,9 +38,12 @@ declare -A SERVICE_DEPENDENTS=(
     [node-red]=""
     [grafana]=""
     [telegraf]=""
+    [loki]="alloy"
+    [alloy]=""
+    [mqtt-ui]=""
 )
 
-ALL_SERVICES=(mqtt influxdb node-red grafana telegraf)
+ALL_SERVICES=(mqtt influxdb node-red grafana telegraf loki alloy mqtt-ui)
 
 # Each service sits in a Compose profile of its own name; enabling them all
 # lets this script start and stop any service, whatever COMPOSE_PROFILES says
@@ -52,23 +58,19 @@ get_status() {
     echo "$status"
 }
 
-# Get port mapping for a service
+# Host ports a running service is published on (from Docker, so .env's
+# *_PORT settings show as they are)
 get_port() {
-    local service="$1"
-    case "$service" in
-        mqtt)      echo "1883,9001" ;;
-        influxdb)  echo "8086" ;;
-        node-red)  echo "1880" ;;
-        grafana)   echo "3000" ;;
-        telegraf)  echo "-" ;;
-    esac
+    local ports
+    ports=$(docker port "p4n4-$1" 2>/dev/null | sed 's/.*://' | sort -un | paste -sd, -)
+    echo "${ports:--}"
 }
 
 # Print status table
 print_status() {
     echo ""
-    printf "${BOLD}  %-12s %-10s %-12s %s${NC}\n" "SERVICE" "STATUS" "PORTS" "DEPENDS ON"
-    printf "  ${DIM}%-12s %-10s %-12s %s${NC}\n" "───────────" "────────" "──────────" "──────────"
+    printf "${BOLD}  %-12s %-10s %-16s %s${NC}\n" "SERVICE" "STATUS" "PORTS" "DEPENDS ON"
+    printf "  ${DIM}%-12s %-10s %-16s %s${NC}\n" "───────────" "────────" "──────────────" "──────────"
 
     for service in "${ALL_SERVICES[@]}"; do
         local status
@@ -85,7 +87,7 @@ print_status() {
             *)         status_color="${DIM}$status${NC}" ;;
         esac
 
-        printf "  ${BOLD}%-12s${NC} %-19s %-12s %s\n" \
+        printf "  ${BOLD}%-12s${NC} %-19s %-16s %s\n" \
             "$service" "$status_color" "$port" "$deps"
     done
     echo ""
@@ -169,14 +171,14 @@ select_with_gum() {
     local selected
     if [ ${#preselected[@]} -gt 0 ]; then
         selected=$(gum choose --no-limit \
-            --header="  MING: mqtt, influxdb, node-red, grafana  |  optional: telegraf" \
+            --header="  MING: mqtt, influxdb, node-red, grafana  |  optional: telegraf, loki, alloy, mqtt-ui" \
             --cursor.foreground="6" \
             --selected.foreground="2" \
             --selected="${preselected[*]}" \
             "${options[@]}" 2>/dev/null || true)
     else
         selected=$(gum choose --no-limit \
-            --header="  MING: mqtt, influxdb, node-red, grafana  |  optional: telegraf" \
+            --header="  MING: mqtt, influxdb, node-red, grafana  |  optional: telegraf, loki, alloy, mqtt-ui" \
             --cursor.foreground="6" \
             --selected.foreground="2" \
             "${options[@]}" 2>/dev/null || true)

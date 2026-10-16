@@ -1,8 +1,10 @@
 # ==============================================================================
 # Grafana Datasources Provisioning
 # ==============================================================================
-# Env vars (INFLUXDB_TOKEN, INFLUXDB_ORG) are injected by docker-compose.yml
-# and expanded by Grafana at startup.
+# Env vars (INFLUXDB_TOKEN, INFLUXDB_ORG, INFLUXDB_BUCKET*) are injected by
+# docker-compose.yml and expanded by Grafana at startup. Dashboard and alert
+# queries read from v.defaultBucket, the bucket of the data source they use,
+# so renaming a bucket in .env needs no change to them.
 # ==============================================================================
 
 apiVersion: 1
@@ -32,14 +34,13 @@ datasources:
     jsonData:
       version: Flux
       organization: $INFLUXDB_ORG
-      defaultBucket: raw_telemetry
-      tlsSkipVerify: true
+      defaultBucket: $INFLUXDB_BUCKET
     secureJsonData:
       token: $INFLUXDB_TOKEN
     isDefault: true
     editable: true
 
-  # Downsampled / aggregated metrics (365d)
+  # Hourly rollups of the primary bucket (365d)
   - name: InfluxDB-Processed
     uid: influxdb-processed
     type: influxdb
@@ -48,8 +49,7 @@ datasources:
     jsonData:
       version: Flux
       organization: $INFLUXDB_ORG
-      defaultBucket: processed_metrics
-      tlsSkipVerify: true
+      defaultBucket: $INFLUXDB_BUCKET_PROCESSED
     secureJsonData:
       token: $INFLUXDB_TOKEN
     isDefault: false
@@ -64,8 +64,7 @@ datasources:
     jsonData:
       version: Flux
       organization: $INFLUXDB_ORG
-      defaultBucket: ai_events
-      tlsSkipVerify: true
+      defaultBucket: $INFLUXDB_BUCKET_AI_EVENTS
     secureJsonData:
       token: $INFLUXDB_TOKEN
     isDefault: false
@@ -80,8 +79,7 @@ datasources:
     jsonData:
       version: Flux
       organization: $INFLUXDB_ORG
-      defaultBucket: system_health
-      tlsSkipVerify: true
+      defaultBucket: $INFLUXDB_BUCKET_HEALTH
     secureJsonData:
       token: $INFLUXDB_TOKEN
     isDefault: false
@@ -96,9 +94,18 @@ datasources:
     jsonData:
       version: Flux
       organization: $INFLUXDB_ORG
-      defaultBucket: sandbox
-      tlsSkipVerify: true
+      defaultBucket: $INFLUXDB_SANDBOX_BUCKET
     secureJsonData:
       token: $INFLUXDB_TOKEN
+    isDefault: false
+    editable: true
+
+  # Container logs (profiles "loki" and "alloy"). Without them, queries to
+  # it fail and nothing else is affected.
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
     isDefault: false
     editable: true

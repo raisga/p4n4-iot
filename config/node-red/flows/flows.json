@@ -4,7 +4,7 @@
         "type": "tab",
         "label": "MING IoT Pipeline",
         "disabled": false,
-        "info": "Routes MQTT data to InfluxDB.\n- Production: sensors/<device-id>/<measurement> and inference/<device-id>/result → 'raw_telemetry' bucket (30d)\n- Sandbox: sandbox/* → 'sandbox' bucket\n\nUses InfluxDB Line Protocol via HTTP API (no contrib nodes needed).\nRequires INFLUXDB_TOKEN env var in Node-RED container."
+        "info": "Routes MQTT data to InfluxDB.\n- Production: sensors/<device-id>/<measurement> and inference/<device-id>/result → raw_telemetry bucket\n- Sandbox: the same topics under sandbox/ → sandbox bucket\n\nPayloads: a JSON object (nested objects and arrays are flattened), or a bare number, boolean or text, stored as \"value\". A \"ts\", \"timestamp\" or \"time\" key (epoch s/ms/µs/ns or ISO 8601) sets the reading's time.\n\nLines are batched (up to 500, or 1 s after the first) into one write per bucket, through InfluxDB's HTTP API (no contrib nodes needed). Requires the INFLUXDB_TOKEN and INFLUXDB_ORG env vars in the Node-RED container."
     },
     {
         "id": "broker-mosquitto",
@@ -58,7 +58,9 @@
         "x": 120,
         "y": 100,
         "wires": [
-            ["json-production"]
+            [
+                "func-format"
+            ]
         ]
     },
     {
@@ -77,39 +79,94 @@
         "x": 120,
         "y": 180,
         "wires": [
-            ["json-production"]
+            [
+                "func-format"
+            ]
         ]
     },
     {
-        "id": "json-production",
-        "type": "json",
-        "z": "tab-pipeline",
-        "name": "Parse JSON",
-        "property": "payload",
-        "action": "obj",
-        "pretty": false,
-        "x": 310,
-        "y": 140,
-        "wires": [
-            ["func-format-iot"]
-        ]
-    },
-    {
-        "id": "func-format-iot",
+        "id": "func-format",
         "type": "function",
         "z": "tab-pipeline",
-        "name": "Format for InfluxDB (iot)",
-        "func": "try {\n    var token = env.get(\"INFLUXDB_TOKEN\");\n    if (!token) {\n        node.error(\"INFLUXDB_TOKEN env var not set\", msg);\n        return null;\n    }\n\n    var org = env.get(\"INFLUXDB_ORG\");\n    var bucket = env.get(\"INFLUXDB_BUCKET\") || \"raw_telemetry\";\n    if (!org) {\n        node.error(\"INFLUXDB_ORG env var not set\", msg);\n        return null;\n    }\n\n    // Line protocol escaping (newlines would start a new line, so drop them)\n    function clean(s) { return String(s).replace(/[\\r\\n]+/g, \" \"); }\n    function escMeasurement(s) { return clean(s).replace(/[\\\\, ]/g, \"\\\\$&\"); }\n    function escKey(s) { return clean(s).replace(/[\\\\,= ]/g, \"\\\\$&\"); }\n    function escString(s) { return '\"' + clean(s).replace(/[\\\\\"]/g, \"\\\\$&\") + '\"'; }\n\n    var topic = msg.topic || \"\";\n    var data = msg.payload;\n    if (!data || typeof data !== \"object\" || Array.isArray(data)) {\n        node.warn(\"Invalid payload on \" + msg.topic + \": expected a JSON object\");\n        return null;\n    }\n    // Already stored by p4n4-api (POST /api/v1/telemetry), with the device's own\n    // timestamp: storing it again would duplicate the reading\n    if (data._stored_by === \"p4n4-api\") return null;\n\n    var parts = topic.split(\"/\");\n    var measurement, tags = {}, fields = [];\n\n    if (parts[0] === \"sensors\") {\n        // sensors/<device-id>/<measurement>: the topic names the device and sensor\n        if (parts.length !== 3 || !parts[1] || !parts[2]) {\n            node.warn(\"Ignored \" + msg.topic + \": expected sensors/<device-id>/<measurement>\");\n            return null;\n        }\n        measurement = \"sensor_data\";\n        tags.device = parts[1];\n        tags.sensor = parts[2];\n    } else if (parts[0] === \"inference\") {\n        // inference/<device-id>/result: the topic names the device\n        if (parts.length !== 3 || !parts[1] || parts[2] !== \"result\") {\n            node.warn(\"Ignored \" + msg.topic + \": expected inference/<device-id>/result\");\n            return null;\n        }\n        measurement = \"inference\";\n        tags.device = parts[1];\n        if (data.model) tags.model = data.model;\n    } else {\n        node.warn(\"Unknown topic: \" + msg.topic);\n        return null;\n    }\n\n    for (var key in data) {\n        var val = data[key];\n        if (key === \"device\" || key === \"model\") {\n            continue;\n        } else if (typeof val === \"number\") {\n            if (isFinite(val)) fields.push(escKey(key) + \"=\" + val);\n        } else if (typeof val === \"string\") {\n            fields.push(escKey(key) + \"=\" + escString(val));\n        } else if (typeof val === \"boolean\") {\n            fields.push(escKey(key) + \"=\" + (val ? \"true\" : \"false\"));\n        }\n    }\n\n    if (fields.length === 0) return null;\n\n    var line = escMeasurement(measurement);\n    Object.keys(tags).sort().forEach(function (k) {\n        var v = clean(tags[k]);\n        if (v !== \"\") line += \",\" + escKey(k) + \"=\" + escKey(v);\n    });\n    line += \" \" + fields.join(\",\");\n\n    msg.payload = line;\n    msg.url = \"http://influxdb:8086/api/v2/write?org=\" + encodeURIComponent(org) +\n        \"&bucket=\" + encodeURIComponent(bucket) + \"&precision=ms\";\n    msg.headers = {\n        \"Authorization\": \"Token \" + token,\n        \"Content-Type\": \"text/plain\"\n    };\n\n    return msg;\n} catch (err) {\n    node.error(\"Format error: \" + err.message, msg);\n    return null;\n}",
-        "outputs": 1,
+        "name": "Format for InfluxDB",
+        "func": "// sensors/<device-id>/<measurement> and inference/<device-id>/result, also\n// under sandbox/, to one line of InfluxDB line protocol. Output 1 goes to the\n// raw_telemetry bucket, output 2 (sandbox/ topics) to the sandbox bucket. Each\n// line carries its own timestamp, so the join nodes after this one can batch\n// lines into a single write.\n//\n// Payloads: a JSON object; nested objects and arrays are flattened\n// ({\"accel\": {\"x\": 1}} becomes accel_x, [1, 2] becomes name_0, name_1). A bare\n// number, boolean or text (23.5, true, \"on\") becomes the \"value\" field.\n// \"ts\", \"timestamp\" or \"time\" (epoch s, ms, µs or ns, or an ISO 8601 string)\n// is the reading's time; without one, the time it arrived here.\n\nvar token = env.get(\"INFLUXDB_TOKEN\");\nvar org = env.get(\"INFLUXDB_ORG\");\nif (!token || !org) {\n    node.error(\"INFLUXDB_TOKEN and INFLUXDB_ORG env vars must be set\", msg);\n    return null;\n}\n\nvar TIME_KEYS = [\"ts\", \"timestamp\", \"time\"];\n// Earliest believable reading: devices without a clock send 0 or their uptime\nvar MIN_TIME = Date.UTC(2000, 0, 1);\nvar MAX_DEPTH = 4;\n\n// Line protocol escaping (newlines would start a new line, so drop them)\nfunction clean(s) { return String(s).replace(/[\\r\\n]+/g, \" \"); }\nfunction escMeasurement(s) { return clean(s).replace(/[\\\\, ]/g, \"\\\\$&\"); }\nfunction escKey(s) { return clean(s).replace(/[\\\\,= ]/g, \"\\\\$&\"); }\nfunction escString(s) { return '\"' + clean(s).replace(/[\\\\\"]/g, \"\\\\$&\") + '\"'; }\n\n// Epoch milliseconds from s, ms, µs or ns (told apart by size), or ISO 8601\nfunction toMillis(v) {\n    if (typeof v === \"string\" && /^\\s*-?\\d+(\\.\\d+)?\\s*$/.test(v)) v = Number(v);\n    if (typeof v === \"number\") {\n        if (!isFinite(v)) return NaN;\n        var abs = Math.abs(v);\n        if (abs < 1e11) return Math.round(v * 1000);\n        if (abs < 1e14) return Math.round(v);\n        if (abs < 1e17) return Math.round(v / 1e3);\n        return Math.round(v / 1e6);\n    }\n    if (typeof v === \"string\") return Date.parse(v);\n    return NaN;\n}\n\n// Warns once per device, not on every reading\nfunction warnOnce(device, text) {\n    var warned = context.get(\"warnedTime\") || {};\n    if (warned[device]) return;\n    warned[device] = true;\n    context.set(\"warnedTime\", warned);\n    node.warn(text);\n}\n\nfunction addFields(obj, prefix, depth, fields, skip) {\n    for (var key in obj) {\n        if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;\n        if (depth === 0 && skip.indexOf(key) !== -1) continue;\n        var val = obj[key];\n        var name = prefix ? prefix + \"_\" + key : key;\n        if (val !== null && typeof val === \"object\") {\n            if (depth < MAX_DEPTH) addFields(val, name, depth + 1, fields, skip);\n        } else if (typeof val === \"number\") {\n            if (isFinite(val)) fields.push(escKey(name) + \"=\" + val);\n        } else if (typeof val === \"string\") {\n            fields.push(escKey(name) + \"=\" + escString(val));\n        } else if (typeof val === \"boolean\") {\n            fields.push(escKey(name) + \"=\" + (val ? \"true\" : \"false\"));\n        }\n    }\n}\n\nvar sandbox = /^sandbox\\//.test(msg.topic || \"\");\nvar topic = (msg.topic || \"\").replace(/^sandbox\\//, \"\");\nvar where = sandbox ? \"sandbox/\" : \"\";\n\n// Payload: JSON, or a bare value\nvar data = msg.payload;\nif (Buffer.isBuffer(data)) data = data.toString();\nif (typeof data === \"string\") {\n    var text = data.trim();\n    try {\n        data = JSON.parse(text);\n    } catch (err) {\n        if (text === \"\" || /^[\\[{\"]/.test(text)) {\n            node.warn(\"Invalid payload on \" + msg.topic + \": not valid JSON\");\n            return null;\n        }\n        data = text;\n    }\n}\nif (typeof data === \"number\" || typeof data === \"boolean\" || typeof data === \"string\") {\n    data = { value: data };\n}\nif (!data || typeof data !== \"object\" || Array.isArray(data)) {\n    node.warn(\"Invalid payload on \" + msg.topic + \": expected a JSON object or a single value\");\n    return null;\n}\n// Already stored by p4n4-api (POST /api/v1/telemetry), with the device's own\n// timestamp: storing it again would duplicate the reading\nif (data._stored_by === \"p4n4-api\") return null;\n\nvar parts = topic.split(\"/\");\nvar measurement, tags = {};\nif (parts[0] === \"sensors\") {\n    // sensors/<device-id>/<measurement>: the topic names the device and sensor\n    if (parts.length !== 3 || !parts[1] || !parts[2]) {\n        node.warn(\"Ignored \" + msg.topic + \": expected \" + where + \"sensors/<device-id>/<measurement>\");\n        return null;\n    }\n    measurement = \"sensor_data\";\n    tags.device = parts[1];\n    tags.sensor = parts[2];\n} else if (parts[0] === \"inference\") {\n    // inference/<device-id>/result: the topic names the device\n    if (parts.length !== 3 || !parts[1] || parts[2] !== \"result\") {\n        node.warn(\"Ignored \" + msg.topic + \": expected \" + where + \"inference/<device-id>/result\");\n        return null;\n    }\n    measurement = \"inference\";\n    tags.device = parts[1];\n    if (data.model) tags.model = data.model;\n} else {\n    node.warn(\"Unknown topic: \" + msg.topic);\n    return null;\n}\n\n// The reading's own time, if it has a believable one\nvar now = Date.now();\nvar time = now;\nvar skip = [\"device\", \"model\", \"_stored_by\"].concat(TIME_KEYS);\nif (sandbox) skip.push(\"sandbox\");\nfor (var i = 0; i < TIME_KEYS.length; i++) {\n    if (data[TIME_KEYS[i]] === undefined) continue;\n    var t = toMillis(data[TIME_KEYS[i]]);\n    if (t >= MIN_TIME && t <= now + 86400000) {\n        time = t;\n    } else {\n        warnOnce(tags.device, \"Ignored \" + TIME_KEYS[i] + \"=\" + JSON.stringify(data[TIME_KEYS[i]]) +\n            \" from \" + tags.device + \": not a time between 2000 and tomorrow; using the arrival time\");\n    }\n    break;\n}\n\nvar fields = [];\naddFields(data, \"\", 0, fields, skip);\nif (fields.length === 0) return null;\n\nvar line = escMeasurement(measurement);\nObject.keys(tags).sort().forEach(function (k) {\n    var v = clean(tags[k]);\n    if (v !== \"\") line += \",\" + escKey(k) + \"=\" + escKey(v);\n});\nline += \" \" + fields.join(\",\") + \" \" + time;\n\nvar bucket = sandbox\n    ? env.get(\"INFLUXDB_SANDBOX_BUCKET\") || \"sandbox\"\n    : env.get(\"INFLUXDB_BUCKET\") || \"raw_telemetry\";\nmsg.payload = line;\nmsg.url = \"http://influxdb:8086/api/v2/write?org=\" + encodeURIComponent(org) +\n    \"&bucket=\" + encodeURIComponent(bucket) + \"&precision=ms\";\nmsg.headers = {\n    \"Authorization\": \"Token \" + token,\n    \"Content-Type\": \"text/plain; charset=utf-8\"\n};\nreturn sandbox ? [null, msg] : [msg, null];\n",
+        "outputs": 2,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 530,
+        "x": 380,
+        "y": 220,
+        "wires": [
+            [
+                "join-iot"
+            ],
+            [
+                "join-sandbox"
+            ]
+        ],
+        "outputLabels": [
+            "raw_telemetry",
+            "sandbox"
+        ]
+    },
+    {
+        "id": "join-iot",
+        "type": "join",
+        "z": "tab-pipeline",
+        "name": "Batch raw_telemetry writes",
+        "mode": "custom",
+        "build": "string",
+        "property": "payload",
+        "propertyType": "msg",
+        "key": "topic",
+        "joiner": "\\n",
+        "joinerType": "str",
+        "useparts": false,
+        "accumulate": false,
+        "timeout": "1",
+        "count": "500",
+        "reduceRight": false,
+        "reduceExp": "",
+        "reduceInit": "",
+        "reduceInitType": "",
+        "reduceFixup": "",
+        "x": 590,
         "y": 140,
         "wires": [
-            ["http-write-iot"]
+            [
+                "http-write-iot"
+            ]
+        ]
+    },
+    {
+        "id": "join-sandbox",
+        "type": "join",
+        "z": "tab-pipeline",
+        "name": "Batch sandbox writes",
+        "mode": "custom",
+        "build": "string",
+        "property": "payload",
+        "propertyType": "msg",
+        "key": "topic",
+        "joiner": "\\n",
+        "joinerType": "str",
+        "useparts": false,
+        "accumulate": false,
+        "timeout": "1",
+        "count": "500",
+        "reduceRight": false,
+        "reduceExp": "",
+        "reduceInit": "",
+        "reduceInitType": "",
+        "reduceFixup": "",
+        "x": 590,
+        "y": 340,
+        "wires": [
+            [
+                "http-write-sandbox"
+            ]
         ]
     },
     {
@@ -128,10 +185,12 @@
         "authType": "",
         "senderr": true,
         "headers": [],
-        "x": 770,
+        "x": 820,
         "y": 140,
         "wires": [
-            ["debug-production"]
+            [
+                "debug-production"
+            ]
         ]
     },
     {
@@ -147,7 +206,7 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 980,
+        "x": 1040,
         "y": 140,
         "wires": []
     },
@@ -156,7 +215,7 @@
         "type": "comment",
         "z": "tab-pipeline",
         "name": "Sandbox Pipeline → sandbox bucket",
-        "info": "Routes sandbox/* topics to the 'sandbox' InfluxDB bucket.\nStrips 'sandbox/' prefix before determining measurement type, so sensor topics are sandbox/sensors/<device-id>/<measurement>.\nUse 'make test-sandbox' to publish test data.",
+        "info": "Routes sandbox/ topics to the sandbox InfluxDB bucket, through the same Format for InfluxDB node (its second output).\nSensor topics are sandbox/sensors/<device-id>/<measurement>, inference topics sandbox/inference/<device-id>/result.\nUse 'make test-sandbox' to publish test data.",
         "x": 210,
         "y": 280,
         "wires": []
@@ -175,41 +234,11 @@
         "rh": 0,
         "inputs": 0,
         "x": 120,
-        "y": 340,
+        "y": 300,
         "wires": [
-            ["json-sandbox"]
-        ]
-    },
-    {
-        "id": "json-sandbox",
-        "type": "json",
-        "z": "tab-pipeline",
-        "name": "Parse JSON",
-        "property": "payload",
-        "action": "obj",
-        "pretty": false,
-        "x": 310,
-        "y": 340,
-        "wires": [
-            ["func-format-sandbox"]
-        ]
-    },
-    {
-        "id": "func-format-sandbox",
-        "type": "function",
-        "z": "tab-pipeline",
-        "name": "Format for InfluxDB (sandbox)",
-        "func": "try {\n    var token = env.get(\"INFLUXDB_TOKEN\");\n    if (!token) {\n        node.error(\"INFLUXDB_TOKEN env var not set\", msg);\n        return null;\n    }\n\n    var org = env.get(\"INFLUXDB_ORG\");\n    var bucket = env.get(\"INFLUXDB_SANDBOX_BUCKET\") || \"sandbox\";\n    if (!org) {\n        node.error(\"INFLUXDB_ORG env var not set\", msg);\n        return null;\n    }\n\n    // Line protocol escaping (newlines would start a new line, so drop them)\n    function clean(s) { return String(s).replace(/[\\r\\n]+/g, \" \"); }\n    function escMeasurement(s) { return clean(s).replace(/[\\\\, ]/g, \"\\\\$&\"); }\n    function escKey(s) { return clean(s).replace(/[\\\\,= ]/g, \"\\\\$&\"); }\n    function escString(s) { return '\"' + clean(s).replace(/[\\\\\"]/g, \"\\\\$&\") + '\"'; }\n\n    var topic = (msg.topic || \"\").replace(/^sandbox\\//, \"\");\n    var data = msg.payload;\n    if (!data || typeof data !== \"object\" || Array.isArray(data)) {\n        node.warn(\"Invalid payload on \" + msg.topic + \": expected a JSON object\");\n        return null;\n    }\n    // Already stored by p4n4-api (POST /api/v1/telemetry), with the device's own\n    // timestamp: storing it again would duplicate the reading\n    if (data._stored_by === \"p4n4-api\") return null;\n\n    var parts = topic.split(\"/\");\n    var measurement, tags = {}, fields = [];\n\n    if (parts[0] === \"sensors\") {\n        // sensors/<device-id>/<measurement>: the topic names the device and sensor\n        if (parts.length !== 3 || !parts[1] || !parts[2]) {\n            node.warn(\"Ignored \" + msg.topic + \": expected sandbox/sensors/<device-id>/<measurement>\");\n            return null;\n        }\n        measurement = \"sensor_data\";\n        tags.device = parts[1];\n        tags.sensor = parts[2];\n    } else if (parts[0] === \"inference\") {\n        // inference/<device-id>/result: the topic names the device\n        if (parts.length !== 3 || !parts[1] || parts[2] !== \"result\") {\n            node.warn(\"Ignored \" + msg.topic + \": expected sandbox/inference/<device-id>/result\");\n            return null;\n        }\n        measurement = \"inference\";\n        tags.device = parts[1];\n        if (data.model) tags.model = data.model;\n    } else {\n        node.warn(\"Unknown topic: \" + msg.topic);\n        return null;\n    }\n\n    for (var key in data) {\n        var val = data[key];\n        if (key === \"device\" || key === \"model\" || key === \"sandbox\") {\n            continue;\n        } else if (typeof val === \"number\") {\n            if (isFinite(val)) fields.push(escKey(key) + \"=\" + val);\n        } else if (typeof val === \"string\") {\n            fields.push(escKey(key) + \"=\" + escString(val));\n        } else if (typeof val === \"boolean\") {\n            fields.push(escKey(key) + \"=\" + (val ? \"true\" : \"false\"));\n        }\n    }\n\n    if (fields.length === 0) return null;\n\n    var line = escMeasurement(measurement);\n    Object.keys(tags).sort().forEach(function (k) {\n        var v = clean(tags[k]);\n        if (v !== \"\") line += \",\" + escKey(k) + \"=\" + escKey(v);\n    });\n    line += \" \" + fields.join(\",\");\n\n    msg.payload = line;\n    msg.url = \"http://influxdb:8086/api/v2/write?org=\" + encodeURIComponent(org) +\n        \"&bucket=\" + encodeURIComponent(bucket) + \"&precision=ms\";\n    msg.headers = {\n        \"Authorization\": \"Token \" + token,\n        \"Content-Type\": \"text/plain\"\n    };\n\n    return msg;\n} catch (err) {\n    node.error(\"Format error: \" + err.message, msg);\n    return null;\n}",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 540,
-        "y": 340,
-        "wires": [
-            ["http-write-sandbox"]
+            [
+                "func-format"
+            ]
         ]
     },
     {
@@ -228,10 +257,12 @@
         "authType": "",
         "senderr": true,
         "headers": [],
-        "x": 790,
+        "x": 820,
         "y": 340,
         "wires": [
-            ["debug-sandbox"]
+            [
+                "debug-sandbox"
+            ]
         ]
     },
     {
@@ -247,7 +278,7 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 980,
+        "x": 1040,
         "y": 340,
         "wires": []
     },
@@ -261,10 +292,12 @@
             "http-write-sandbox"
         ],
         "uncaught": false,
-        "x": 790,
+        "x": 820,
         "y": 420,
         "wires": [
-            ["debug-influx-errors"]
+            [
+                "debug-influx-errors"
+            ]
         ]
     },
     {
@@ -280,7 +313,7 @@
         "targetType": "full",
         "statusVal": "",
         "statusType": "auto",
-        "x": 980,
+        "x": 1040,
         "y": 420,
         "wires": []
     },
@@ -317,7 +350,9 @@
         "x": 150,
         "y": 100,
         "wires": [
-            ["json-system1"]
+            [
+                "json-system1"
+            ]
         ]
     },
     {
@@ -331,7 +366,9 @@
         "x": 350,
         "y": 100,
         "wires": [
-            ["func-format-system1"]
+            [
+                "func-format-system1"
+            ]
         ]
     },
     {
@@ -349,7 +386,9 @@
         "x": 560,
         "y": 100,
         "wires": [
-            ["http-write-system1"]
+            [
+                "http-write-system1"
+            ]
         ]
     },
     {
@@ -371,7 +410,9 @@
         "x": 790,
         "y": 100,
         "wires": [
-            ["debug-system1"]
+            [
+                "debug-system1"
+            ]
         ]
     },
     {
@@ -396,12 +437,16 @@
         "type": "catch",
         "z": "tab-system1",
         "name": "InfluxDB write errors",
-        "scope": ["http-write-system1"],
+        "scope": [
+            "http-write-system1"
+        ],
         "uncaught": false,
         "x": 790,
         "y": 160,
         "wires": [
-            ["debug-system1-errors"]
+            [
+                "debug-system1-errors"
+            ]
         ]
     },
     {

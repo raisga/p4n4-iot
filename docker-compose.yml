@@ -1,10 +1,19 @@
 # Every service is optional: each sits in a profile of its own name, and
 # COMPOSE_PROFILES in .env lists the ones that start. The default is the MING
-# stack (mqtt, influxdb, node-red, grafana); add telegraf to collect host and
-# broker metrics. Node-RED needs mqtt and influxdb, Grafana needs influxdb.
+# stack (mqtt, influxdb, node-red, grafana). Optional: telegraf (host and broker
+# metrics), loki and alloy (container logs), mqtt-ui (MQTT web client).
+# Node-RED needs mqtt and influxdb, Grafana needs influxdb, Alloy needs loki.
 
 # Images are pinned to a minor version: patch releases come in with
 # `docker compose pull`, new features don't arrive unannounced.
+
+# Docker keeps every container's output in a JSON file that never shrinks on
+# its own; rotate it. LOG_MAX_SIZE and LOG_MAX_FILE in .env.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
 
 services:
 
@@ -20,14 +29,22 @@ services:
     container_name: p4n4-mqtt
     profiles: [mqtt]
     restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
     ports:
-      - "1883:1883"   # MQTT TCP
-      - "9001:9001"   # MQTT WebSocket
-    # bridge.sh writes the external-broker bridge config from MQTT_REMOTE_*
-    # (a no-op when MQTT_REMOTE_HOST is empty), then runs the image entrypoint
+      # Devices: container port 1884, which asks for a login once MQTT_PASSWORD
+      # is set. The stack's own services use 1883 on p4n4-net, never published.
+      - "${MQTT_BIND:-0.0.0.0}:${MQTT_PORT:-1883}:1884"         # MQTT TCP
+      - "${MQTT_BIND:-0.0.0.0}:${MQTT_WS_PORT:-9001}:9001"      # MQTT WebSocket
+      - "${MQTT_BIND:-0.0.0.0}:${MQTT_TLS_PORT:-8883}:8883"     # MQTT TLS (with MQTT_TLS_*)
+    # bridge.sh writes the listeners, device logins and external-broker
+    # bridge from the variables below, then runs the image entrypoint
     entrypoint: ["/bin/sh", "/p4n4/bridge.sh"]
-    command: ["/usr/sbin/mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
+    command: ["/usr/sbin/mosquitto", "-c", "/p4n4/mosquitto.conf"]
     environment:
+      MQTT_USER: ${MQTT_USER:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_TLS_CERT_FILE: ${MQTT_TLS_CERT_FILE:-}
+      MQTT_TLS_KEY_FILE: ${MQTT_TLS_KEY_FILE:-}
       MQTT_REMOTE_HOST: ${MQTT_REMOTE_HOST:-}
       MQTT_REMOTE_PORT: ${MQTT_REMOTE_PORT:-}
       MQTT_REMOTE_USER: ${MQTT_REMOTE_USER:-}
@@ -41,12 +58,13 @@ services:
       MQTT_REMOTE_CERT_FILE: ${MQTT_REMOTE_CERT_FILE:-}
       MQTT_REMOTE_KEY_FILE: ${MQTT_REMOTE_KEY_FILE:-}
     volumes:
-      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./config/mosquitto/bridge.sh:/p4n4/bridge.sh:ro
+      # mosquitto.conf, bridge.sh, and the optional passwd and acl files
+      - ./config/mosquitto:/p4n4:ro
       - ./config/mosquitto/certs:/mosquitto/certs:ro
       - mosquitto-data:/mosquitto/data
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1 -W 3"]
+      # The internal listener: anonymous, whatever MQTT_PASSWORD says
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -p 1883 -t '$$SYS/broker/uptime' -C 1 -W 3"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -62,8 +80,9 @@ services:
     container_name: p4n4-influxdb
     profiles: [influxdb]
     restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
     ports:
-      - "8086:8086"
+      - "${INFLUXDB_BIND:-0.0.0.0}:${INFLUXDB_PORT:-8086}:8086"
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
       DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME:-admin}
@@ -72,11 +91,14 @@ services:
       DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
       DOCKER_INFLUXDB_INIT_RETENTION: ${INFLUXDB_RAW_RETENTION:-30d}
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
-      # Additional bucket names (created by init-buckets.sh)
+      # Additional buckets and their retention (created by init-buckets.sh)
       INFLUXDB_BUCKET_PROCESSED: ${INFLUXDB_BUCKET_PROCESSED:-processed_metrics}
       INFLUXDB_BUCKET_AI_EVENTS: ${INFLUXDB_BUCKET_AI_EVENTS:-ai_events}
       INFLUXDB_BUCKET_HEALTH: ${INFLUXDB_BUCKET_HEALTH:-system_health}
       INFLUXDB_SANDBOX_BUCKET: ${INFLUXDB_SANDBOX_BUCKET:-sandbox}
+      INFLUXDB_PROCESSED_RETENTION: ${INFLUXDB_PROCESSED_RETENTION:-365d}
+      INFLUXDB_AI_EVENTS_RETENTION: ${INFLUXDB_AI_EVENTS_RETENTION:-0}
+      INFLUXDB_HEALTH_RETENTION: ${INFLUXDB_HEALTH_RETENTION:-7d}
       INFLUXDB_SANDBOX_RETENTION: ${INFLUXDB_SANDBOX_RETENTION:-30d}
     volumes:
       - influxdb-data:/var/lib/influxdb2
@@ -99,8 +121,11 @@ services:
     container_name: p4n4-node-red
     profiles: [node-red]
     restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
     ports:
-      - "1880:1880"
+      - "${NODE_RED_BIND:-0.0.0.0}:${NODE_RED_PORT:-1880}:1880"
+    # entrypoint.sh installs NODE_RED_PACKAGES, then runs the image entrypoint
+    entrypoint: ["/bin/bash", "/p4n4/entrypoint.sh"]
     environment:
       TZ: ${TZ:-UTC}
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
@@ -115,9 +140,14 @@ services:
       # Editor login (no default password: logins are refused until it is set)
       NODE_RED_USER: ${NODE_RED_USER:-admin}
       NODE_RED_PASSWORD: ${NODE_RED_PASSWORD:-}
+      # Key for flows/flows_cred.json (empty: generated, kept in the node-red-data volume)
+      NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:-}
+      # npm packages installed on start, e.g. @flowfuse/node-red-dashboard@1
+      NODE_RED_PACKAGES: ${NODE_RED_PACKAGES:-}
     volumes:
       - node-red-data:/data
       - ./config/node-red/settings.js:/data/settings.js:ro
+      - ./config/node-red/entrypoint.sh:/p4n4/entrypoint.sh:ro
       # Mount the directory, not the file: Node-RED saves by renaming a temp file
       # over flows.json, which fails with EBUSY on a single-file bind mount.
       - ./config/node-red/flows:/data/flows
@@ -131,7 +161,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      # Longer than the others: the first start may install NODE_RED_PACKAGES
+      start_period: 120s
     networks:
       - p4n4-net
 
@@ -144,8 +175,9 @@ services:
     container_name: p4n4-grafana
     profiles: [grafana]
     restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
     ports:
-      - "3000:3000"
+      - "${GRAFANA_BIND:-0.0.0.0}:${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-adminpassword}
@@ -158,6 +190,12 @@ services:
       # Passed to provisioning templates via env var expansion
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
       INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
+      # Each data source's default bucket, which dashboards and alerts query
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
+      INFLUXDB_BUCKET_PROCESSED: ${INFLUXDB_BUCKET_PROCESSED:-processed_metrics}
+      INFLUXDB_BUCKET_AI_EVENTS: ${INFLUXDB_BUCKET_AI_EVENTS:-ai_events}
+      INFLUXDB_BUCKET_HEALTH: ${INFLUXDB_BUCKET_HEALTH:-system_health}
+      INFLUXDB_SANDBOX_BUCKET: ${INFLUXDB_SANDBOX_BUCKET:-sandbox}
       # System 1 drift alerts authenticate to n8n's system1-drift webhook with it
       SYSTEM1_ALERT_TOKEN: ${SYSTEM1_ALERT_TOKEN:-}
     volumes:
@@ -175,16 +213,22 @@ services:
     networks:
       - p4n4-net
 
+  # ====================================================================================
+  # OPTIONAL SERVICES (not in the default profiles)
+  # ====================================================================================
+
   # ------------------------------------------------------------------------------------
-  # Metrics Agent (Telegraf) — optional, not in the default profiles
+  # Metrics Agent (Telegraf)
   # ------------------------------------------------------------------------------------
-  # Writes host metrics (CPU, memory, disk, network) and Mosquitto broker stats
-  # to the system_health bucket. Sensor data still flows through Node-RED.
+  # Writes host metrics (CPU, memory, disk, load) and Mosquitto broker stats to
+  # the system_health bucket, shown on Grafana's Stack Health dashboard. Sensor
+  # data still flows through Node-RED.
   telegraf:
     image: telegraf:1.40
     container_name: p4n4-telegraf
     profiles: [telegraf]
     restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
     # Names the host in the metrics' "host" tag
     hostname: ${TELEGRAF_HOSTNAME:-p4n4}
     environment:
@@ -206,6 +250,69 @@ services:
     networks:
       - p4n4-net
 
+  # ------------------------------------------------------------------------------------
+  # Log Store (Loki)
+  # ------------------------------------------------------------------------------------
+  # Keeps the containers' logs that Alloy ships, for Grafana's Stack Logs
+  # dashboard and Explore. Not published: only Grafana reads it.
+  loki:
+    image: grafana/loki:3.7
+    container_name: p4n4-loki
+    profiles: [loki]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    command: ["-config.file=/etc/loki/loki.yml", "-config.expand-env=true"]
+    environment:
+      LOKI_RETENTION: ${LOKI_RETENTION:-168h}
+    volumes:
+      - ./config/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    # No healthcheck: the image has no shell or HTTP client to run one
+    networks:
+      - p4n4-net
+
+  # ------------------------------------------------------------------------------------
+  # Log Collector (Grafana Alloy)
+  # ------------------------------------------------------------------------------------
+  # Reads the logs of every p4n4-* container (all stacks) through the Docker
+  # API and ships them to Loki. The socket is read-only, but anything that can
+  # read it can see every container's configuration, environment included.
+  alloy:
+    # Alloy publishes no minor-version tag: pinned to the patch release
+    image: grafana/alloy:v1.20.1
+    container_name: p4n4-alloy
+    profiles: [alloy]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
+    volumes:
+      - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      loki:
+        condition: service_started
+    networks:
+      - p4n4-net
+
+  # ------------------------------------------------------------------------------------
+  # MQTT Web Client (MQTTX Web)
+  # ------------------------------------------------------------------------------------
+  # Browse, subscribe and publish from a browser. The page connects from the
+  # browser to the broker's WebSocket port (ws://<host>:MQTT_WS_PORT/mqtt), with
+  # MQTT_USER / MQTT_PASSWORD once logins are on. Connections are kept in the
+  # browser, not in the container.
+  mqtt-ui:
+    image: emqx/mqttx-web:v1.13.1
+    container_name: p4n4-mqtt-ui
+    profiles: [mqtt-ui]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    ports:
+      - "${MQTT_UI_BIND:-0.0.0.0}:${MQTT_UI_PORT:-8081}:80"
+    networks:
+      - p4n4-net
+
 # ====================================================================================
 # NETWORKS
 # ====================================================================================
@@ -215,7 +322,9 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        # Change it if it overlaps a VPN or another network; `docker network rm
+        # p4n4-net` after `make down` (every stack down) for it to take effect
+        - subnet: ${P4N4_SUBNET:-172.20.0.0/16}
 
 # ====================================================================================
 # VOLUMES
@@ -226,3 +335,5 @@ volumes:
   influxdb-config:
   node-red-data:
   grafana-data:
+  loki-data:
+  alloy-data:

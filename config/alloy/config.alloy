@@ -1,0 +1,52 @@
+// =============================================================================
+// Alloy: ships the p4n4 containers' logs to Loki (profile "alloy")
+// =============================================================================
+//
+//   Docker API (read-only socket) ──► p4n4-* containers ──► Loki ──► Grafana
+//
+// Every container whose name starts with p4n4- is read, from this stack and
+// the others on the host (ai, extras, dashboard). Each log line is labelled
+// with its container, Compose service and Compose project.
+// =============================================================================
+
+discovery.docker "p4n4" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "name"
+    values = ["^p4n4-"]
+  }
+}
+
+discovery.relabel "p4n4" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
+}
+
+loki.source.docker "p4n4" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.p4n4.targets
+  relabel_rules = discovery.relabel.p4n4.rules
+  forward_to    = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

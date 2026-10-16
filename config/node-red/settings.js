@@ -54,6 +54,21 @@ module.exports = {
         }
     },
 
+    // Key for flows/flows_cred.json, from NODE_RED_CREDENTIAL_SECRET in .env.
+    // Unset, Node-RED generates one and keeps it in the node-red-data volume,
+    // so the credentials can't be read without that volume. Setting it on an
+    // existing install moves the credentials over to it; changing it after
+    // that makes them unreadable.
+    credentialSecret: process.env.NODE_RED_CREDENTIAL_SECRET || undefined,
+
+    // Palette manager: install nodes from the editor (NODE_RED_PACKAGES in
+    // .env installs them on start instead)
+    externalModules: {
+        palette: {
+            allowInstall: true
+        }
+    },
+
     // Disable tours for cleaner UI
     tours: false,
 
@@ -61,10 +76,6 @@ module.exports = {
     editorTheme: {
         projects: {
             enabled: false
-        },
-        palette: {
-            // Allow palette manager
-            editable: true
         },
         menu: {
             "menu-item-help": {
