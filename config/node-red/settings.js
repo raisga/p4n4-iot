@@ -36,8 +36,12 @@ module.exports = {
     uiPort: process.env.PORT || 1880,
     uiHost: "0.0.0.0",
 
-    // HTTP admin root
-    httpAdminRoot: '/',
+    // HTTP admin root: where the editor and the Admin API are served, from
+    // NODE_RED_ADMIN_ROOT in .env. "/" by default; "/svc/node-red/" when
+    // p4n4-dashboard proxies Node-RED on its own origin (its NODE_RED_UPSTREAM),
+    // so its Services tab can show the editor over HTTPS. Flows' HTTP
+    // endpoints stay at the root (httpNodeRoot).
+    httpAdminRoot: process.env.NODE_RED_ADMIN_ROOT || '/',
     httpNodeRoot: '/',
 
     // Require a login for the editor and the Admin API

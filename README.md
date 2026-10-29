@@ -435,6 +435,8 @@ All credentials can be customized in `.env`. Defaults (from `.env.example`):
 
 To show Grafana inside the [p4n4-dashboard](https://github.com/raisga/p4n4-dashboard) web UI, set `GRAFANA_ALLOW_EMBEDDING=true` in `.env` (`p4n4 init` does this when the dashboard layer is enabled). To serve Grafana through the dashboard's own origin (for HTTPS), also set `GRAFANA_SUB_PATH=/grafana/` and the dashboard's `GRAFANA_UPSTREAM=http://p4n4-grafana:3000`. For read-only viewing without a login, see the anonymous-viewer example in `docker-compose.override.yml.example`.
 
+The dashboard's Services tab can show the Node-RED editor inside the app too. Over plain HTTP it loads from port 1880 directly; behind HTTPS, serve it through the dashboard's origin: set `NODE_RED_ADMIN_ROOT=/svc/node-red/` here and the dashboard's `NODE_RED_UPSTREAM=http://p4n4-node-red:1880` and `DASHBOARD_NODE_RED_BASE=/svc/node-red/`. The editor is then at `:1880/svc/node-red/` too; flows' HTTP endpoints stay at the root.
+
 ---
 
 ## Security Hardening
