@@ -100,7 +100,7 @@ module.exports = {
 
     // Function node settings
     functionGlobalContext: {
-        // Add global context items here
+        feedback: require("./feedback")
     },
 
     // Export global context with flows

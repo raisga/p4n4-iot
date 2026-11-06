@@ -433,6 +433,10 @@ All credentials can be customized in `.env`. Defaults (from `.env.example`):
 
 **Note:** Change all passwords and the InfluxDB token before deploying to production.
 
+`p4n4 init` generates these secrets instead of using the examples. It also generates
+`MQTT_USER` / `MQTT_PASSWORD` and a separate `MQTT_READONLY_USER` /
+`MQTT_READONLY_PASSWORD`, so newly initialized projects require device logins.
+
 To show Grafana inside the [p4n4-dashboard](https://github.com/raisga/p4n4-dashboard) web UI, set `GRAFANA_ALLOW_EMBEDDING=true` in `.env` (`p4n4 init` does this when the dashboard layer is enabled). To serve Grafana through the dashboard's own origin (for HTTPS), also set `GRAFANA_SUB_PATH=/grafana/` and the dashboard's `GRAFANA_UPSTREAM=http://p4n4-grafana:3000`. For read-only viewing without a login, see the anonymous-viewer example in `docker-compose.override.yml.example`.
 
 The dashboard's Services tab can show the Node-RED editor inside the app too. Over plain HTTP it loads from port 1880 directly; behind HTTPS, serve it through the dashboard's origin: set `NODE_RED_ADMIN_ROOT=/svc/node-red/` here and the dashboard's `NODE_RED_UPSTREAM=http://p4n4-node-red:1880` and `DASHBOARD_NODE_RED_BASE=/svc/node-red/`. The editor is then at `:1880/svc/node-red/` too; flows' HTTP endpoints stay at the root.
@@ -454,9 +458,29 @@ make mqtt-user NAME=sensor-001          # one login per device (optional)
 docker compose restart mqtt
 ```
 
-From then on every device, the MQTTX web client included, must log in, as `MQTT_USER` or an account in `config/mosquitto/passwd`. To limit what each account may do, copy `config/mosquitto/acl.example` to `config/mosquitto/acl`: by default it lets each device publish only under its own ID (`sensors/<login>/…`). `MQTT_USER` always keeps access to every topic. The container log shows the result on start (`docker logs p4n4-mqtt`).
+From then on every device, the MQTTX web client included, must log in, as `MQTT_USER` or an account in `config/mosquitto/passwd`. To limit what each account may do, copy `config/mosquitto/acl.example` to `config/mosquitto/acl` and add a user block per device, with its own topics. `MQTT_USER` always keeps access to every topic. The container log shows the result on start (`docker logs p4n4-mqtt`).
+
+For read-only tools, set `MQTT_READONLY_USER` and `MQTT_READONLY_PASSWORD` as well,
+using a different username. The entrypoint hashes both accounts and generates the
+read-only ACL on every start. `p4n4 init` sets both accounts automatically. Custom
+ACLs must use per-user write rules: global write patterns would also authorize
+the read-only account, so the broker refuses that combination.
 
 Anything on `p4n4-net`, and the Docker host itself, can still use the anonymous internal listener, so only trusted containers should join that network.
+
+**Feedback storage.** MQTT packets are limited to 4 MiB. Kept System 1 feedback
+examples are limited to 64 KiB each, 1 MiB per set and 32 set files. Node-RED reports
+an error instead of appending past a limit; the InfluxDB feedback point is unaffected.
+Export with `p4n4 ai system1 feedback <set> --append`, review/redact the examples,
+then remove that set's `/data/system1/feedback/<set>.jsonl` from the Node-RED
+container to make room. Existing oversized files are not deleted automatically.
+
+Run the focused checks from this repository with
+`node --test tests/feedback.test.cjs tests/mqtt.test.cjs` (Node.js 18+ and Docker Compose).
+The broker tests use isolated containers without publishing ports and remove their
+containers and volumes afterwards.
+In a superproject checkout, set `P4N4_TEMPLATE_ROOT` to the absolute path of
+`tools/templates/projects` to include all seven template brokers.
 
 **MQTT over TLS.** Put a certificate (with its chain) and key in `config/mosquitto/certs/`, then set `MQTT_TLS_CERT_FILE` and `MQTT_TLS_KEY_FILE` to their file names. The broker then also listens for devices on `MQTT_TLS_PORT` (8883), with the same logins.
 

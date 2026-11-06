@@ -43,6 +43,8 @@ services:
     environment:
       MQTT_USER: ${MQTT_USER:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_READONLY_USER: ${MQTT_READONLY_USER:-}
+      MQTT_READONLY_PASSWORD: ${MQTT_READONLY_PASSWORD:-}
       MQTT_TLS_CERT_FILE: ${MQTT_TLS_CERT_FILE:-}
       MQTT_TLS_KEY_FILE: ${MQTT_TLS_KEY_FILE:-}
       MQTT_REMOTE_HOST: ${MQTT_REMOTE_HOST:-}
@@ -149,6 +151,7 @@ services:
     volumes:
       - node-red-data:/data
       - ./config/node-red/settings.js:/data/settings.js:ro
+      - ./config/node-red/feedback.js:/data/feedback.js:ro
       - ./config/node-red/entrypoint.sh:/p4n4/entrypoint.sh:ro
       # Mount the directory, not the file: Node-RED saves by renaming a temp file
       # over flows.json, which fails with EBUSY on a single-file bind mount.
